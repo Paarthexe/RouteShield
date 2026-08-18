@@ -77,4 +77,3 @@ ENABLE_CACHE=true
 
 - Mireye `/v1/fetch` is capped at 4 concurrent requests per route via `asyncio.Semaphore` to avoid 429 `fetch_busy` errors. Individual sample points can still get `mireye_data: null` if the API is under load.
 - **NBI data file is not in the repo** (317MB, gitignored). Download `2025AllStatesNoDelimiterAllRecords.txt` from [FHWA NBI](https://www.fhwa.dot.gov/bridge/nbi/ascii.cfm) and place it at the repo root. The SQLite index is built automatically on first backend startup.
-- There is a stale `.git` directory inside `backend/` from an earlier `git init` run there. Remove it: `rm -rf backend/.git`
