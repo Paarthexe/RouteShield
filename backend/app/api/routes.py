@@ -1,0 +1,59 @@
+from fastapi import APIRouter, HTTPException, status
+from app.schemas.routes import RouteGenerateRequest, RouteGenerateResponse, RouteAnalyzeRequest
+from app.models.route_models import Coordinate, Location, RouteAnalyzeResponse
+from app.services.geocoding import geocoding_service
+from app.services.routing import routing_service
+from app.config import settings
+
+router = APIRouter(prefix="/routes", tags=["routes"])
+
+
+@router.post("/generate", response_model=RouteGenerateResponse)
+async def generate_routes(payload: RouteGenerateRequest):
+    routes = await routing_service.generate_candidate_routes(
+        origin=payload.origin,
+        destination=payload.destination,
+        sample_interval_m=payload.sample_interval_m
+    )
+    return RouteGenerateResponse(routes=routes)
+
+
+@router.post("/analyze", response_model=RouteAnalyzeResponse)
+async def analyze_corridor(payload: RouteAnalyzeRequest):
+    if isinstance(payload.origin, str):
+        origin_loc = await geocoding_service.resolve_location(payload.origin)
+        origin_coord = Coordinate(latitude=origin_loc.latitude, longitude=origin_loc.longitude)
+    else:
+        origin_coord = payload.origin
+        origin_loc = Location(
+            query=f"{origin_coord.latitude:.4f},{origin_coord.longitude:.4f}",
+            latitude=origin_coord.latitude,
+            longitude=origin_coord.longitude,
+            display_name=f"({origin_coord.latitude:.4f}, {origin_coord.longitude:.4f})"
+        )
+
+    if isinstance(payload.destination, str):
+        dest_loc = await geocoding_service.resolve_location(payload.destination)
+        dest_coord = Coordinate(latitude=dest_loc.latitude, longitude=dest_loc.longitude)
+    else:
+        dest_coord = payload.destination
+        dest_loc = Location(
+            query=f"{dest_coord.latitude:.4f},{dest_coord.longitude:.4f}",
+            latitude=dest_coord.latitude,
+            longitude=dest_coord.longitude,
+            display_name=f"({dest_coord.latitude:.4f}, {dest_coord.longitude:.4f})"
+        )
+
+    interval = payload.sample_interval_m or settings.ROUTE_SAMPLE_INTERVAL_M
+    routes = await routing_service.generate_candidate_routes(
+        origin=origin_coord,
+        destination=dest_coord,
+        sample_interval_m=interval
+    )
+
+    return RouteAnalyzeResponse(
+        origin=origin_loc,
+        destination=dest_loc,
+        routes=routes,
+        sample_interval_m=interval
+    )
