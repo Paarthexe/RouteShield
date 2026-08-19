@@ -17,9 +17,19 @@ logger = logging.getLogger(__name__)
 
 class GeocodingService:
     def __init__(self):
-        self.mireye_api_key = settings.MIREYE_API_KEY
         self.mireye_base_url = settings.MIREYE_BASE_URL.rstrip("/")
         self.timeout = settings.HTTP_TIMEOUT_S
+        self._override_key = None
+
+    @property
+    def mireye_api_key(self) -> str:
+        if self._override_key is not None:
+            return self._override_key
+        return settings.MIREYE_API_KEY
+
+    @mireye_api_key.setter
+    def mireye_api_key(self, value: str):
+        self._override_key = value
 
     async def resolve_location(self, query: str) -> Location:
         clean = query.strip()
@@ -29,13 +39,16 @@ class GeocodingService:
         cache_key = f"geocode:{clean.lower()}"
         cached = cache_service.get(cache_key)
         if cached:
+            logger.info(f"⚡ Returning cached geocoding result for '{clean}'")
             return Location(**cached)
 
         location = None
         if self.mireye_api_key:
+            logger.info(f"🌐 Querying Mireye /v1/geocode API for address: '{clean}'")
             location = await self._mireye_geocode(clean)
 
         if not location:
+            logger.info(f"🌐 Falling back to OpenStreetMap Nominatim for address: '{clean}'")
             location = await self._nominatim(clean)
 
         if not location:
@@ -49,17 +62,19 @@ class GeocodingService:
 
     async def _mireye_geocode(self, query: str) -> Optional[Location]:
         try:
+            url = f"{self.mireye_base_url}/geocode"
+            logger.info(f"📡 Sending POST {url} with address payload: {{'address': '{query}'}}")
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(
-                    f"{self.mireye_base_url}/geocode",
-                    headers={"Authorization": f"Bearer {self.mireye_api_key}"},
+                    url,
+                    headers={"Authorization": f"Bearer {self.mireye_api_key}", "Content-Type": "application/json"},
                     json={"address": query}
                 )
                 if resp.status_code == 200:
                     data = resp.json()
                     lat, lng = data.get("lat"), data.get("lng")
                     if lat is not None and lng is not None:
-                        logger.info(f"Mireye geocode: '{query}' -> ({lat}, {lng})")
+                        logger.info(f"✅ Mireye /v1/geocode success: '{query}' -> lat={lat}, lng={lng}")
                         display = data.get("normalized_address", query)
 
                         # Append county+state from /v1/lookup
@@ -72,9 +87,9 @@ class GeocodingService:
 
                         return Location(query=query, latitude=float(lat), longitude=float(lng), display_name=display)
                 else:
-                    logger.warning(f"Mireye geocode {resp.status_code}: {resp.text[:150]}")
+                    logger.warning(f"⚠️ Mireye /v1/geocode returned status {resp.status_code}: {resp.text[:150]}")
         except Exception as e:
-            logger.warning(f"Mireye geocode failed: {e}")
+            logger.warning(f"❌ Mireye /v1/geocode request failed: {e}")
         return None
 
     async def _nominatim(self, query: str) -> Optional[Location]:

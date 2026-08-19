@@ -28,3 +28,7 @@ dist/
 .idea/
 .vscode/
 *.swp
+
+context.md 
+./node_modules
+TODO.md

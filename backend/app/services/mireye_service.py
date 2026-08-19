@@ -9,12 +9,22 @@ logger = logging.getLogger(__name__)
 
 class MireyeDataService:
     def __init__(self):
-        self.api_key = settings.MIREYE_API_KEY
         self.base_url = settings.MIREYE_BASE_URL.rstrip("/")
         self.timeout = settings.HTTP_TIMEOUT_S
+        self._override_key = None
+
+    @property
+    def api_key(self) -> str:
+        if self._override_key is not None:
+            return self._override_key
+        return settings.MIREYE_API_KEY
+
+    @api_key.setter
+    def api_key(self, value: str):
+        self._override_key = value
 
     def _headers(self) -> Dict[str, str]:
-        return {"Authorization": f"Bearer {self.api_key}"}
+        return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
     async def fetch_location_facts(self, lat: float, lon: float, preset: str = "natural_hazard") -> Optional[Dict[str, Any]]:
         """POST /v1/fetch — provenance-tagged physical world data at a coordinate."""
@@ -27,6 +37,7 @@ class MireyeDataService:
             return cached
 
         try:
+            logger.info(f"📡 Mireye /v1/fetch request for point: lat={lat:.4f}, lon={lon:.4f}")
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(
                     f"{self.base_url}/fetch",
@@ -45,12 +56,13 @@ class MireyeDataService:
                         result["seismic_pga_g"] = fields["seismic_pga_2pct_50yr_g"].get("value")
                         result["seismic_source"] = fields["seismic_pga_2pct_50yr_g"].get("source")
 
+                    logger.info(f"✅ Mireye /v1/fetch success for point: lat={lat:.4f}, lon={lon:.4f}")
                     cache_service.set(cache_key, result)
                     return result
                 else:
-                    logger.warning(f"Mireye /v1/fetch returned {resp.status_code}: {resp.text[:200]}")
+                    logger.warning(f"⚠️ Mireye /v1/fetch returned status {resp.status_code}: {resp.text[:200]}")
         except Exception as e:
-            logger.warning(f"Mireye /v1/fetch failed: {e}")
+            logger.warning(f"❌ Mireye /v1/fetch failed: {e}")
         return None
 
     async def lookup_place(self, input_str: str) -> Optional[Dict[str, Any]]:
@@ -58,6 +70,7 @@ class MireyeDataService:
         if not self.api_key:
             return None
         try:
+            logger.info(f"📡 Mireye /v1/lookup request for input: '{input_str}'")
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(
                     f"{self.base_url}/lookup",
@@ -65,9 +78,12 @@ class MireyeDataService:
                     json={"input": input_str}
                 )
                 if resp.status_code == 200:
+                    logger.info(f"✅ Mireye /v1/lookup success for: '{input_str}'")
                     return resp.json()
+                else:
+                    logger.warning(f"⚠️ Mireye /v1/lookup status {resp.status_code}: {resp.text[:150]}")
         except Exception as e:
-            logger.warning(f"Mireye /v1/lookup failed: {e}")
+            logger.warning(f"❌ Mireye /v1/lookup failed: {e}")
         return None
 
 

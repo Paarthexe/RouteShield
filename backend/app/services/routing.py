@@ -47,7 +47,7 @@ class RoutingService:
             coords = r_data.get("geometry", {}).get("coordinates", [])
 
             geometry = GeoJSONLineString(type="LineString", coordinates=coords)
-            tag = "Primary" if idx == 0 else f"Alternative {idx}"
+            tag = "Fastest Evacuation Corridor" if idx == 0 else f"Alternative Evacuation Corridor {idx}"
 
             samples = await sampling_service.sample_route(
                 route_id=route_id,
