@@ -36,6 +36,22 @@ class GeocodingService:
         if not clean:
             raise HTTPException(status_code=400, detail="Location query cannot be empty.")
 
+        coord_parts = [p.strip() for p in clean.split(',')]
+        if len(coord_parts) == 2:
+            try:
+                lat_val = float(coord_parts[0])
+                lon_val = float(coord_parts[1])
+                if -90.0 <= lat_val <= 90.0 and -180.0 <= lon_val <= 180.0:
+                    logger.info(f"📍 Direct coordinate input: ({lat_val:.5f}, {lon_val:.5f})")
+                    return Location(
+                        query=clean,
+                        latitude=lat_val,
+                        longitude=lon_val,
+                        display_name=f"Point ({lat_val:.4f}, {lon_val:.4f})"
+                    )
+            except ValueError:
+                pass
+
         cache_key = f"geocode:{clean.lower()}"
         cached = cache_service.get(cache_key)
         if cached:

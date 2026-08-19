@@ -1,4 +1,4 @@
-export async function analyzeRoutes(origin, destination, sampleIntervalM = 500) {
+export async function analyzeRoutes(origin, destination, sampleIntervalM = 500, waypoints = []) {
   const response = await fetch('/api/routes/analyze', {
     method: 'POST',
     headers: {
@@ -7,6 +7,7 @@ export async function analyzeRoutes(origin, destination, sampleIntervalM = 500) 
     body: JSON.stringify({
       origin,
       destination,
+      waypoints: waypoints.filter(w => typeof w === 'string' ? w.trim() !== '' : Boolean(w)),
       sample_interval_m: sampleIntervalM,
     }),
   });

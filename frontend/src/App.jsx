@@ -5,12 +5,13 @@ import RouteCard from './components/RouteCard';
 import MapView from './components/MapView';
 import SampleInspector from './components/SampleInspector';
 import ErrorNotice from './components/ErrorNotice';
-import { analyzeRoutes } from './services/api';
+import { analyzeRoutes, resolveLocation } from './services/api';
 import { Layers, Eye, EyeOff, MapPin, Compass, ShieldAlert, Sparkles } from 'lucide-react';
 
 export default function App() {
-  const [origin, setOrigin] = useState('Financial District, San Francisco, CA');
-  const [destination, setDestination] = useState('San Francisco International Airport, CA');
+  const [origin, setOrigin] = useState('');
+  const [destination, setDestination] = useState('');
+  const [waypoints, setWaypoints] = useState([]);
   const [sampleInterval, setSampleInterval] = useState(500);
   const [loading, setLoading] = useState(false);
   const [analysisData, setAnalysisData] = useState(null);
@@ -19,11 +20,91 @@ export default function App() {
   const [selectedSample, setSelectedSample] = useState(null);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [pickerMode, setPickerMode] = useState(null); // 'origin' | 'destination' | 'waypoint_N' | null
 
-  // Initial load
+  // Live resolved location state for immediate map markers when typing
+  const [resolvedOrigin, setResolvedOrigin] = useState(null);
+  const [resolvedDestination, setResolvedDestination] = useState(null);
+  const [resolvedWaypoints, setResolvedWaypoints] = useState([]);
+
+  // Helper to parse raw numeric coordinate strings
+  const parseCoords = (val) => {
+    if (!val || typeof val !== 'string') return null;
+    const parts = val.split(',').map(s => parseFloat(s.trim()));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      return { latitude: parts[0], longitude: parts[1], display_name: `Point (${parts[0].toFixed(4)}, ${parts[1].toFixed(4)})` };
+    }
+    return null;
+  };
+
+  // Live geocoding resolution for Origin
   useEffect(() => {
-    handleAnalyze();
-  }, []);
+    if (!origin.trim()) {
+      setResolvedOrigin(null);
+      return;
+    }
+    const directCoord = parseCoords(origin);
+    if (directCoord) {
+      setResolvedOrigin(directCoord);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const loc = await resolveLocation(origin);
+        setResolvedOrigin(loc);
+      } catch (e) {
+        // live lookup fail ignored until submit
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [origin]);
+
+  // Live geocoding resolution for Destination
+  useEffect(() => {
+    if (!destination.trim()) {
+      setResolvedDestination(null);
+      return;
+    }
+    const directCoord = parseCoords(destination);
+    if (directCoord) {
+      setResolvedDestination(directCoord);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const loc = await resolveLocation(destination);
+        setResolvedDestination(loc);
+      } catch (e) {
+        // live lookup fail ignored until submit
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [destination]);
+
+  // Live geocoding resolution for Waypoints
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      const promises = waypoints.map(async (wp) => {
+        if (!wp.trim()) return null;
+        const direct = parseCoords(wp);
+        if (direct) return direct;
+        try {
+          return await resolveLocation(wp);
+        } catch (e) {
+          return null;
+        }
+      });
+      const results = await Promise.all(promises);
+      setResolvedWaypoints(results);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [waypoints]);
+
+  const handleSetWaypointFromMap = (index, lat, lng) => {
+    const updated = [...waypoints];
+    updated[index] = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    setWaypoints(updated);
+  };
 
   const handleAnalyze = async () => {
     setLoading(true);
@@ -32,7 +113,7 @@ export default function App() {
     setSelectedSample(null);
 
     try {
-      const data = await analyzeRoutes(origin, destination, sampleInterval);
+      const data = await analyzeRoutes(origin, destination, sampleInterval, waypoints);
       setAnalysisData(data);
       if (data.routes && data.routes.length > 0) {
         setSelectedRouteId(data.routes[0].route_id);
@@ -56,7 +137,7 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 font-sans">
       <Header />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <main className="flex-1 w-full max-w-[1800px] mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
         {/* Left Column: Form & Route Cards (4 cols on lg) */}
         <div className="lg:col-span-4 space-y-5">
@@ -65,10 +146,14 @@ export default function App() {
             setOrigin={setOrigin}
             destination={destination}
             setDestination={setDestination}
+            waypoints={waypoints}
+            setWaypoints={setWaypoints}
             sampleInterval={sampleInterval}
             setSampleInterval={setSampleInterval}
             onAnalyze={handleAnalyze}
             loading={loading}
+            pickerMode={pickerMode}
+            setPickerMode={setPickerMode}
           />
 
           {error && (
@@ -152,10 +237,11 @@ export default function App() {
           </div>
 
           {/* Interactive Map View */}
-          <div className="h-[560px] w-full relative">
+          <div className="h-[600px] w-full relative">
             <MapView
               origin={analysisData?.origin}
               destination={analysisData?.destination}
+              waypoints={analysisData?.waypoints || []}
               routes={analysisData?.routes || []}
               selectedRouteId={selectedRouteId}
               onSelectRoute={(id) => {
@@ -165,6 +251,17 @@ export default function App() {
               showSamples={showSamples}
               selectedSample={selectedSample}
               onSelectSample={(sample) => setSelectedSample(sample)}
+              onSetOrigin={(lat, lng) => setOrigin(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)}
+              onSetDestination={(lat, lng) => setDestination(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)}
+              onSetWaypoint={handleSetWaypointFromMap}
+              rawOriginStr={origin}
+              rawDestinationStr={destination}
+              rawWaypoints={waypoints}
+              resolvedOrigin={resolvedOrigin}
+              resolvedDestination={resolvedDestination}
+              resolvedWaypoints={resolvedWaypoints}
+              pickerMode={pickerMode}
+              setPickerMode={setPickerMode}
             />
           </div>
 

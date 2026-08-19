@@ -46,6 +46,7 @@ class Route(BaseModel):
 class RouteAnalyzeResponse(BaseModel):
     origin: Location
     destination: Location
+    waypoints: List[Location] = []
     routes: List[Route]
     sample_interval_m: float
     cache_hit: bool = False

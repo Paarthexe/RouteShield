@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, useMap } from 'react-leaflet';
+import React, { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import { MapPin, Navigation, Compass, CheckCircle2 } from 'lucide-react';
 
 const ROUTE_LINE_COLORS = {
   route_1: '#06b6d4', // Cyan
@@ -50,25 +51,86 @@ function MapBoundsAdjuster({ bounds }) {
   return null;
 }
 
+// Map Click Event Handler & Location Picker Component
+function MapClickHandler({ onSetOrigin, onSetDestination, onSetWaypoint, pickerMode, setPickerMode }) {
+  useMapEvents({
+    click(e) {
+      const { lat, lng } = e.latlng;
+      if (pickerMode === 'origin') {
+        onSetOrigin(lat, lng);
+        setPickerMode(null);
+      } else if (pickerMode === 'destination') {
+        onSetDestination(lat, lng);
+        setPickerMode(null);
+      } else if (pickerMode && pickerMode.startsWith('waypoint_')) {
+        const idx = parseInt(pickerMode.replace('waypoint_', ''), 10);
+        if (!isNaN(idx) && onSetWaypoint) {
+          onSetWaypoint(idx, lat, lng);
+        }
+        setPickerMode(null);
+      }
+    }
+  });
+
+  return null;
+}
+
+const parseCoordStr = (val) => {
+  if (!val) return null;
+  if (typeof val === 'object' && val.latitude && val.longitude) {
+    return { latitude: val.latitude, longitude: val.longitude, display_name: val.display_name || `${val.latitude.toFixed(4)}, ${val.longitude.toFixed(4)}` };
+  }
+  if (typeof val === 'string') {
+    const parts = val.split(',').map(s => parseFloat(s.trim()));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      return { latitude: parts[0], longitude: parts[1], display_name: `Point (${parts[0].toFixed(4)}, ${parts[1].toFixed(4)})` };
+    }
+  }
+  return null;
+};
+
 export default function MapView({
   origin,
   destination,
+  waypoints = [],
   routes,
   selectedRouteId,
   onSelectRoute,
   showSamples,
   selectedSample,
-  onSelectSample
+  onSelectSample,
+  onSetOrigin,
+  onSetDestination,
+  onSetWaypoint,
+  rawOriginStr,
+  rawDestinationStr,
+  rawWaypoints = [],
+  resolvedOrigin,
+  resolvedDestination,
+  resolvedWaypoints = [],
+  pickerMode,
+  setPickerMode
 }) {
+  const originObj = parseCoordStr(origin) || resolvedOrigin || parseCoordStr(rawOriginStr);
+  const destinationObj = parseCoordStr(destination) || resolvedDestination || parseCoordStr(rawDestinationStr);
+
+  const rawWpObjs = (waypoints.length > 0 ? waypoints : rawWaypoints).map(wp => parseCoordStr(wp));
+  const waypointObjs = rawWpObjs.map((obj, i) => obj || (resolvedWaypoints && resolvedWaypoints[i])).filter(Boolean);
+
   // Center fallback (San Francisco coordinates)
   const defaultCenter = [37.7749, -122.4194];
   const defaultZoom = 11;
 
-  // Calculate bounds if origin, destination or routes present
+  // Calculate bounds if origin, waypoints, destination or routes present
   let mapBounds = [];
-  if (origin && destination) {
-    mapBounds.push([origin.latitude, origin.longitude]);
-    mapBounds.push([destination.latitude, destination.longitude]);
+  if (originObj) {
+    mapBounds.push([originObj.latitude, originObj.longitude]);
+  }
+  waypointObjs.forEach(wp => {
+    mapBounds.push([wp.latitude, wp.longitude]);
+  });
+  if (destinationObj) {
+    mapBounds.push([destinationObj.latitude, destinationObj.longitude]);
   }
 
   if (routes && routes.length > 0) {
@@ -80,6 +142,12 @@ export default function MapView({
   }
 
   const selectedRouteObj = routes.find(r => r.route_id === selectedRouteId) || routes[0];
+
+  // Construct preview path coordinates (Origin -> Waypoints -> Destination)
+  const previewPositions = [];
+  if (originObj) previewPositions.push([originObj.latitude, originObj.longitude]);
+  waypointObjs.forEach(wp => previewPositions.push([wp.latitude, wp.longitude]));
+  if (destinationObj) previewPositions.push([destinationObj.latitude, destinationObj.longitude]);
 
   return (
     <div className="relative w-full h-full min-h-[450px] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
@@ -97,44 +165,92 @@ export default function MapView({
 
         <MapBoundsAdjuster bounds={mapBounds.length > 0 ? mapBounds : null} />
 
-        {/* Origin Marker */}
-        {origin && (
+        {/* Map Click Picker Handler */}
+        <MapClickHandler
+          onSetOrigin={onSetOrigin}
+          onSetDestination={onSetDestination}
+          onSetWaypoint={onSetWaypoint}
+          pickerMode={pickerMode}
+          setPickerMode={setPickerMode}
+        />
+
+        {/* Dashed Preview Line between Origin -> Waypoints -> Destination before route generation */}
+        {previewPositions.length >= 2 && (!routes || routes.length === 0) && (
+          <Polyline
+            positions={previewPositions}
+            pathOptions={{
+              color: '#38bdf8',
+              weight: 2.5,
+              opacity: 0.7,
+              dashArray: '6, 8'
+            }}
+          />
+        )}
+
+        {/* Origin Marker (A) */}
+        {originObj && (
           <Marker
-            position={[origin.latitude, origin.longitude]}
-            icon={originIcon}
+            position={[originObj.latitude, originObj.longitude]}
+            icon={createCustomMarkerIcon('A', '#10b981', '#ffffff')}
           >
             <Popup>
               <div className="p-1 space-y-1 font-sans">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block font-mono">
-                  INCIDENT LOCATION (ORIGIN)
+                  INCIDENT LOCATION (ORIGIN A)
                 </span>
                 <p className="text-xs font-semibold text-slate-100">
-                  {origin.display_name}
+                  {originObj.display_name}
                 </p>
                 <span className="text-[10px] text-slate-400 font-mono block">
-                  {origin.latitude.toFixed(5)}, {origin.longitude.toFixed(5)}
+                  {originObj.latitude.toFixed(5)}, {originObj.longitude.toFixed(5)}
                 </span>
               </div>
             </Popup>
           </Marker>
         )}
 
-        {/* Destination Marker */}
-        {destination && (
+        {/* Intermediate Waypoint Markers (B, C, D...) */}
+        {waypointObjs.map((wp, idx) => {
+          const letter = String.fromCharCode(66 + idx);
+          return (
+            <Marker
+              key={idx}
+              position={[wp.latitude, wp.longitude]}
+              icon={createCustomMarkerIcon(letter, '#f59e0b', '#ffffff')}
+            >
+              <Popup>
+                <div className="p-1 space-y-1 font-sans">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block font-mono">
+                    INTERMEDIATE STOP ({letter})
+                  </span>
+                  <p className="text-xs font-semibold text-slate-100">
+                    {wp.display_name}
+                  </p>
+                  <span className="text-[10px] text-slate-400 font-mono block">
+                    {wp.latitude.toFixed(5)}, {wp.longitude.toFixed(5)}
+                  </span>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
+
+        {/* Destination Marker (B, C, D, E...) */}
+        {destinationObj && (
           <Marker
-            position={[destination.latitude, destination.longitude]}
-            icon={destinationIcon}
+            position={[destinationObj.latitude, destinationObj.longitude]}
+            icon={createCustomMarkerIcon(String.fromCharCode(66 + waypointObjs.length), '#f43f5e', '#ffffff')}
           >
             <Popup>
               <div className="p-1 space-y-1 font-sans">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-rose-400 block font-mono">
-                  EVACUATION DESTINATION
+                  EVACUATION DESTINATION ({String.fromCharCode(66 + waypointObjs.length)})
                 </span>
                 <p className="text-xs font-semibold text-slate-100">
-                  {destination.display_name}
+                  {destinationObj.display_name}
                 </p>
                 <span className="text-[10px] text-slate-400 font-mono block">
-                  {destination.latitude.toFixed(5)}, {destination.longitude.toFixed(5)}
+                  {destinationObj.latitude.toFixed(5)}, {destinationObj.longitude.toFixed(5)}
                 </span>
               </div>
             </Popup>
@@ -222,30 +338,33 @@ export default function MapView({
         )}
       </MapContainer>
 
-      {/* Legend & Controls Overlay */}
-      <div className="absolute bottom-4 left-4 z-20 glass-panel p-3 rounded-xl border border-slate-800 text-xs shadow-xl max-w-xs space-y-2">
-        <div className="flex items-center justify-between font-mono font-bold text-[11px] text-slate-300 uppercase">
-          <span>CORRIDOR LEGEND</span>
-        </div>
-        <div className="space-y-1 text-[11px]">
-          <div className="flex items-center space-x-2">
-            <span className="h-3 w-3 rounded-full bg-cyan-500 shadow-sm shadow-cyan-500/50"></span>
-            <span className="text-slate-200">Route 1 (Primary / Fastest)</span>
+      {/* Legend & Controls Overlay - ONLY SHOWN IF ROUTES ARE PRESENT */}
+      {routes && routes.length > 0 && (
+        <div className="absolute bottom-4 left-4 z-20 glass-panel p-3 rounded-xl border border-slate-800 text-xs shadow-xl max-w-xs space-y-2">
+          <div className="flex items-center justify-between font-mono font-bold text-[11px] text-slate-300 uppercase">
+            <span>CORRIDOR LEGEND</span>
           </div>
-          {routes.length > 1 && (
+          <div className="space-y-1 text-[11px]">
             <div className="flex items-center space-x-2">
-              <span className="h-3 w-3 rounded-full bg-purple-500 shadow-sm shadow-purple-500/50"></span>
-              <span className="text-slate-300">Route 2 (Alternative 1)</span>
+              <span className="h-3 w-3 rounded-full bg-cyan-500 shadow-sm shadow-cyan-500/50"></span>
+              <span className="text-slate-200">Route 1 (Primary / Fastest)</span>
             </div>
-          )}
-          {routes.length > 2 && (
-            <div className="flex items-center space-x-2">
-              <span className="h-3 w-3 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50"></span>
-              <span className="text-slate-300">Route 3 (Alternative 2)</span>
-            </div>
-          )}
+            {routes.length > 1 && (
+              <div className="flex items-center space-x-2">
+                <span className="h-3 w-3 rounded-full bg-purple-500 shadow-sm shadow-purple-500/50"></span>
+                <span className="text-slate-300">Route 2 (Alternative 1)</span>
+              </div>
+            )}
+            {routes.length > 2 && (
+              <div className="flex items-center space-x-2">
+                <span className="h-3 w-3 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50"></span>
+                <span className="text-slate-300">Route 3 (Alternative 2)</span>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
+

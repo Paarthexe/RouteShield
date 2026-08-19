@@ -19,12 +19,16 @@ class RoutingService:
         self,
         origin: Coordinate,
         destination: Coordinate,
+        waypoints: Optional[List[Coordinate]] = None,
         sample_interval_m: Optional[float] = None
     ) -> List[Route]:
         interval = sample_interval_m or settings.ROUTE_SAMPLE_INTERVAL_M
+        w_list = waypoints or []
 
+        w_cache_str = ":".join([f"{round(w.latitude, 5)},{round(w.longitude, 5)}" for w in w_list])
         cache_key = (
             f"route:{round(origin.latitude, 5)},{round(origin.longitude, 5)}"
+            f":w_{w_cache_str}"
             f":{round(destination.latitude, 5)},{round(destination.longitude, 5)}"
             f":int_{int(interval)}"
         )
@@ -32,7 +36,7 @@ class RoutingService:
         if cached:
             return [Route(**r) for r in cached]
 
-        raw_routes = await self._fetch_osrm_routes(origin, destination)
+        raw_routes = await self._fetch_osrm_routes(origin, destination, w_list)
         if not raw_routes:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -96,12 +100,20 @@ class RoutingService:
         cache_service.set(cache_key, [r.model_dump() for r in parsed_routes])
         return parsed_routes
 
-    async def _fetch_osrm_routes(self, origin: Coordinate, destination: Coordinate) -> List[dict]:
-        url = (
-            f"{self.osrm_base_url}/route/v1/driving/"
-            f"{origin.longitude},{origin.latitude};"
-            f"{destination.longitude},{destination.latitude}"
-        )
+    async def _fetch_osrm_routes(
+        self,
+        origin: Coordinate,
+        destination: Coordinate,
+        waypoints: List[Coordinate]
+    ) -> List[dict]:
+        coord_strings = [f"{origin.longitude},{origin.latitude}"]
+        for w in waypoints:
+            coord_strings.append(f"{w.longitude},{w.latitude}")
+        coord_strings.append(f"{destination.longitude},{destination.latitude}")
+
+        path_coords = ";".join(coord_strings)
+        url = f"{self.osrm_base_url}/route/v1/driving/{path_coords}"
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.get(url, params={
