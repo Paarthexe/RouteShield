@@ -1,24 +1,6 @@
 import React, { useState } from 'react';
 import { MapPin, Navigation, Search, Loader2, Sparkles, Plus, Minus, GripVertical } from 'lucide-react';
 
-const PRESET_CORRIDORS = [
-  {
-    name: 'San Francisco Corridor',
-    origin: 'Financial District, San Francisco, CA',
-    destination: 'San Francisco International Airport, CA'
-  },
-  {
-    name: 'Los Angeles Corridor',
-    origin: 'Downtown Los Angeles, CA',
-    destination: 'Santa Monica Pier, CA'
-  },
-  {
-    name: 'New York Corridor',
-    origin: 'Times Square, New York, NY',
-    destination: 'JFK Airport, Queens, NY'
-  }
-];
-
 export default function LocationInput({
   origin,
   setOrigin,
@@ -34,12 +16,6 @@ export default function LocationInput({
   setPickerMode
 }) {
   const [draggedIndex, setDraggedIndex] = useState(null);
-
-  const handlePreset = (preset) => {
-    setOrigin(preset.origin);
-    setDestination(preset.destination);
-    if (setWaypoints) setWaypoints([]);
-  };
 
   const handleAddWaypoint = () => {
     setWaypoints([...waypoints, '']);
@@ -274,26 +250,6 @@ export default function LocationInput({
           )}
         </button>
       </form>
-
-      {/* Preset Corridors */}
-      <div className="pt-2 border-t border-slate-800">
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-          <Sparkles className="h-3 w-3 text-amber-400" />
-          Quick Test Corridors:
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {PRESET_CORRIDORS.map((preset) => (
-            <button
-              key={preset.name}
-              onClick={() => handlePreset(preset)}
-              type="button"
-              className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-2.5 py-1 rounded border border-slate-700 transition-colors"
-            >
-              {preset.name}
-            </button>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

@@ -150,7 +150,7 @@ export default function MapView({
   if (destinationObj) previewPositions.push([destinationObj.latitude, destinationObj.longitude]);
 
   return (
-    <div className="relative w-full h-full min-h-[450px] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
+    <div className="relative w-full h-full min-h-[600px] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
       <MapContainer
         center={defaultCenter}
         zoom={defaultZoom}

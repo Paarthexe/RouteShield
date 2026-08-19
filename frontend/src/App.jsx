@@ -6,7 +6,7 @@ import MapView from './components/MapView';
 import SampleInspector from './components/SampleInspector';
 import ErrorNotice from './components/ErrorNotice';
 import { analyzeRoutes, resolveLocation } from './services/api';
-import { Layers, Eye, EyeOff, MapPin, Compass, ShieldAlert, Sparkles } from 'lucide-react';
+import { Layers, Eye, EyeOff, MapPin, Compass, ShieldAlert, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function App() {
   const [origin, setOrigin] = useState('');
@@ -171,32 +171,98 @@ export default function App() {
             />
           )}
 
-          {/* Candidate Evacuation Corridors List */}
-          {analysisData && analysisData.routes && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between px-1">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono flex items-center gap-1.5">
-                  <Compass className="h-4 w-4 text-cyan-400" />
-                  Candidate Evacuation Corridors ({analysisData.routes.length})
-                </h3>
-              </div>
+          {/* Candidate Evacuation Corridors Slider / Slideshow */}
+          {analysisData && analysisData.routes && analysisData.routes.length > 0 && (() => {
+            const currentRouteIndex = analysisData.routes.findIndex(r => r.route_id === selectedRouteId);
+            const activeIndex = currentRouteIndex >= 0 ? currentRouteIndex : 0;
+            const activeRoute = analysisData.routes[activeIndex];
+            const totalRoutes = analysisData.routes.length;
 
-              <div className="space-y-3">
-                {analysisData.routes.map(route => (
+            const handlePrevRoute = () => {
+              const prevIdx = (activeIndex - 1 + totalRoutes) % totalRoutes;
+              setSelectedRouteId(analysisData.routes[prevIdx].route_id);
+              setSelectedSample(null);
+            };
+
+            const handleNextRoute = () => {
+              const nextIdx = (activeIndex + 1) % totalRoutes;
+              setSelectedRouteId(analysisData.routes[nextIdx].route_id);
+              setSelectedSample(null);
+            };
+
+            return (
+              <div className="space-y-3 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl">
+                {/* Slider Control Header */}
+                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 font-mono flex items-center gap-1.5">
+                    <Compass className="h-4 w-4 text-cyan-400" />
+                    Candidate Corridor {activeIndex + 1} of {totalRoutes}
+                  </h3>
+
+                  {totalRoutes > 1 && (
+                    <div className="flex items-center space-x-1.5">
+                      <button
+                        type="button"
+                        onClick={handlePrevRoute}
+                        title="Previous Corridor"
+                        className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-all cursor-pointer flex items-center gap-0.5 text-xs font-semibold px-2"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                        <span>Prev</span>
+                      </button>
+
+                      <span className="text-[11px] font-mono font-bold text-cyan-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                        {activeIndex + 1} / {totalRoutes}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={handleNextRoute}
+                        title="Next Corridor"
+                        className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-all cursor-pointer flex items-center gap-0.5 text-xs font-semibold px-2"
+                      >
+                        <span>Next</span>
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Active Route Card */}
+                {activeRoute && (
                   <RouteCard
-                    key={route.route_id}
-                    route={route}
-                    isSelected={route.route_id === selectedRouteId}
-                    onSelect={() => {
-                      setSelectedRouteId(route.route_id);
-                      setSelectedSample(null);
-                    }}
+                    key={activeRoute.route_id}
+                    route={activeRoute}
+                    isSelected={true}
+                    onSelect={() => {}}
                     fastestDuration={fastestDuration}
                   />
-                ))}
+                )}
+
+                {/* Dots Indicator */}
+                {totalRoutes > 1 && (
+                  <div className="flex items-center justify-center space-x-2 pt-1">
+                    {analysisData.routes.map((rt, idx) => (
+                      <button
+                        key={rt.route_id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedRouteId(rt.route_id);
+                          setSelectedSample(null);
+                        }}
+                        title={`Switch to Corridor ${idx + 1}`}
+                        className={`h-2 rounded-full transition-all cursor-pointer ${
+                          idx === activeIndex
+                            ? 'w-6 bg-cyan-400 shadow-sm shadow-cyan-500/50'
+                            : 'w-2 bg-slate-700 hover:bg-slate-500'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
         {/* Right Column: Map & Sampling Inspector (8 cols on lg) */}
@@ -237,7 +303,7 @@ export default function App() {
           </div>
 
           {/* Interactive Map View */}
-          <div className="h-[600px] w-full relative">
+          <div className="h-[640px] w-full relative">
             <MapView
               origin={analysisData?.origin}
               destination={analysisData?.destination}
