@@ -13,12 +13,12 @@ export default function Header() {
             <h1 className="text-lg font-extrabold tracking-wider text-slate-100 font-mono uppercase">
               ROUTESHIELD
             </h1>
-            <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase bg-cyan-950 text-cyan-400 border border-cyan-800/60 rounded">
-              Stage 1A: Routing Foundation
+            <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase bg-emerald-950 text-emerald-400 border border-emerald-800/60 rounded">
+              Agentic Evacuation Intelligence
             </span>
           </div>
           <p className="text-xs text-slate-400 font-medium">
-            Evacuation Route Intelligence & Spatial Sampling
+            Hazard-Infrastructure Bottleneck Detection & Resilient Corridor Selection
           </p>
         </div>
       </div>
@@ -26,7 +26,7 @@ export default function Header() {
       <div className="flex items-center space-x-4">
         <div className="hidden md:flex items-center space-x-2 text-xs text-slate-400 bg-slate-800/60 px-3 py-1.5 rounded-md border border-slate-700/50">
           <Layers className="h-3.5 w-3.5 text-cyan-400" />
-          <span>Engine: <strong className="text-slate-200 font-mono">OSRM + Spatial Sampler</strong></span>
+          <span>Engine: <strong className="text-slate-200 font-mono">OSRM + Mireye + NBI Agent</strong></span>
         </div>
       </div>
     </header>

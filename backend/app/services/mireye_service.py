@@ -37,7 +37,7 @@ class MireyeDataService:
             return cached
 
         try:
-            logger.info(f"📡 Mireye /v1/fetch request for point: lat={lat:.4f}, lon={lon:.4f}")
+            logger.info(f"Mireye /v1/fetch request for point: lat={lat:.4f}, lon={lon:.4f}")
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(
                     f"{self.base_url}/fetch",
@@ -56,13 +56,13 @@ class MireyeDataService:
                         result["seismic_pga_g"] = fields["seismic_pga_2pct_50yr_g"].get("value")
                         result["seismic_source"] = fields["seismic_pga_2pct_50yr_g"].get("source")
 
-                    logger.info(f"✅ Mireye /v1/fetch success for point: lat={lat:.4f}, lon={lon:.4f}")
+                    logger.info(f"Mireye /v1/fetch success for point: lat={lat:.4f}, lon={lon:.4f}")
                     cache_service.set(cache_key, result)
                     return result
                 else:
-                    logger.warning(f"⚠️ Mireye /v1/fetch returned status {resp.status_code}: {resp.text[:200]}")
+                    logger.warning(f"Mireye /v1/fetch returned status {resp.status_code}: {resp.text[:200]}")
         except Exception as e:
-            logger.warning(f"❌ Mireye /v1/fetch failed: {e}")
+            logger.warning(f"Mireye /v1/fetch failed: {e}")
         return None
 
     async def lookup_place(self, input_str: str) -> Optional[Dict[str, Any]]:
@@ -70,7 +70,7 @@ class MireyeDataService:
         if not self.api_key:
             return None
         try:
-            logger.info(f"📡 Mireye /v1/lookup request for input: '{input_str}'")
+            logger.info(f"Mireye /v1/lookup request for input: '{input_str}'")
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(
                     f"{self.base_url}/lookup",
@@ -78,12 +78,43 @@ class MireyeDataService:
                     json={"input": input_str}
                 )
                 if resp.status_code == 200:
-                    logger.info(f"✅ Mireye /v1/lookup success for: '{input_str}'")
+                    logger.info(f"Mireye /v1/lookup success for: '{input_str}'")
                     return resp.json()
                 else:
-                    logger.warning(f"⚠️ Mireye /v1/lookup status {resp.status_code}: {resp.text[:150]}")
+                    logger.warning(f"Mireye /v1/lookup status {resp.status_code}: {resp.text[:150]}")
         except Exception as e:
-            logger.warning(f"❌ Mireye /v1/lookup failed: {e}")
+            logger.warning(f"Mireye /v1/lookup failed: {e}")
+        return None
+
+    async def ask_question(self, lat: float, lon: float, question: str) -> Optional[str]:
+        """POST /v1/ask — grounded, cited contextual answer about a location."""
+        if not self.api_key:
+            return None
+
+        cache_key = f"mireye:ask:{round(lat, 4)},{round(lon, 4)}:{question[:80]}"
+        cached = cache_service.get(cache_key)
+        if cached:
+            return cached
+
+        try:
+            logger.info(f"Mireye /v1/ask request at lat={lat:.4f}, lon={lon:.4f}: '{question[:60]}...'")
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(
+                    f"{self.base_url}/ask",
+                    headers=self._headers(),
+                    json={"lat": lat, "lng": lon, "question": question}
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    answer = data.get("answer", "")
+                    if answer:
+                        logger.info(f"Mireye /v1/ask success at lat={lat:.4f}, lon={lon:.4f}")
+                        cache_service.set(cache_key, answer)
+                        return answer
+                else:
+                    logger.warning(f"Mireye /v1/ask returned status {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            logger.warning(f"Mireye /v1/ask failed: {e}")
         return None
 
 

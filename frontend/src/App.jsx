@@ -5,6 +5,8 @@ import RouteCard from './components/RouteCard';
 import MapView from './components/MapView';
 import SampleInspector from './components/SampleInspector';
 import ErrorNotice from './components/ErrorNotice';
+import AgentBriefing from './components/AgentBriefing';
+import ElevationProfile from './components/ElevationProfile';
 import { analyzeRoutes, resolveLocation } from './services/api';
 import { Layers, Eye, EyeOff, MapPin, Compass, ShieldAlert, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -115,11 +117,16 @@ export default function App() {
     try {
       const data = await analyzeRoutes(origin, destination, sampleInterval, waypoints);
       setAnalysisData(data);
-      if (data.routes && data.routes.length > 0) {
+
+      // Auto-select the PRIMARY route if agent made a decision
+      if (data.agent_decision && data.agent_decision.primary_route_id) {
+        setSelectedRouteId(data.agent_decision.primary_route_id);
+      } else if (data.routes && data.routes.length > 0) {
         setSelectedRouteId(data.routes[0].route_id);
-        if (data.routes.length === 1) {
-          setNotice("Only one feasible route was returned for this corridor.");
-        }
+      }
+
+      if (data.routes && data.routes.length === 1) {
+        setNotice("Only one feasible route was returned for this corridor.");
       }
     } catch (err) {
       console.error("Analysis Error:", err);
@@ -139,7 +146,7 @@ export default function App() {
 
       <main className="flex-1 w-full max-w-[1800px] mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
-        {/* Left Column: Form & Route Cards (4 cols on lg) */}
+        {/* Left Column: Form & Route Cards & Agent Briefing (4 cols on lg) */}
         <div className="lg:col-span-4 space-y-5">
           <LocationInput
             origin={origin}
@@ -263,9 +270,14 @@ export default function App() {
               </div>
             );
           })()}
+
+          {/* Agent Decision Briefing Panel */}
+          {analysisData?.agent_decision && (
+            <AgentBriefing agentDecision={analysisData.agent_decision} />
+          )}
         </div>
 
-        {/* Right Column: Map & Sampling Inspector (8 cols on lg) */}
+        {/* Right Column: Map & Elevation Profile & Sampling Inspector (8 cols on lg) */}
         <div className="lg:col-span-8 space-y-4">
           
           {/* Map Toolbar */}
@@ -330,6 +342,11 @@ export default function App() {
               setPickerMode={setPickerMode}
             />
           </div>
+
+          {/* Elevation Profile */}
+          {selectedRouteObj && (
+            <ElevationProfile route={selectedRouteObj} />
+          )}
 
           {/* Physical Sample Point Inspector Panel */}
           {selectedSample && (

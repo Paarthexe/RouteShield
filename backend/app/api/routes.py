@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, HTTPException, status
 from app.schemas.routes import RouteGenerateRequest, RouteGenerateResponse, RouteAnalyzeRequest
 from app.models.route_models import Coordinate, Location, RouteAnalyzeResponse
@@ -64,9 +65,13 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
         waypoint_coords.append(w_coord)
 
     interval = payload.sample_interval_m or settings.ROUTE_SAMPLE_INTERVAL_M
-    routes = await routing_service.generate_candidate_routes(
+
+    # Run the full agent pipeline: route gen → sampling → bottleneck → viability → decision
+    routes, agent_decision = await routing_service.generate_and_analyze(
         origin=origin_coord,
         destination=dest_coord,
+        origin_loc=origin_loc,
+        destination_loc=dest_loc,
         waypoints=waypoint_coords,
         sample_interval_m=interval
     )
@@ -76,5 +81,6 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
         destination=dest_loc,
         waypoints=waypoint_locs,
         routes=routes,
-        sample_interval_m=interval
+        sample_interval_m=interval,
+        agent_decision=agent_decision
     )

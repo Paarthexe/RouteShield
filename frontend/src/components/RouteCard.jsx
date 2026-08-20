@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Navigation, MapPin, CheckCircle2 } from 'lucide-react';
+import { Clock, Navigation, MapPin, CheckCircle2, AlertTriangle, ShieldCheck, ShieldX, ShieldAlert, Layers } from 'lucide-react';
 
 const ROUTE_COLORS = {
   route_1: { border: 'border-cyan-500', text: 'text-cyan-400', bg: 'bg-cyan-500/10', badge: 'bg-cyan-500/20 text-cyan-300' },
@@ -8,9 +8,48 @@ const ROUTE_COLORS = {
   route_4: { border: 'border-emerald-500', text: 'text-emerald-400', bg: 'bg-emerald-500/10', badge: 'bg-emerald-500/20 text-emerald-300' },
 };
 
+const STATUS_CONFIG = {
+  PRIMARY: { label: 'PRIMARY', bg: 'bg-emerald-950', text: 'text-emerald-300', border: 'border-emerald-700' },
+  BACKUP: { label: 'BACKUP', bg: 'bg-blue-950', text: 'text-blue-300', border: 'border-blue-700' },
+  REJECTED: { label: 'REJECTED', bg: 'bg-rose-950', text: 'text-rose-300', border: 'border-rose-700' },
+  ALTERNATIVE: { label: 'ALTERNATIVE', bg: 'bg-amber-950', text: 'text-amber-300', border: 'border-amber-700' },
+  CANDIDATE: { label: 'CANDIDATE', bg: 'bg-slate-800', text: 'text-slate-300', border: 'border-slate-600' },
+};
+
+function ViabilityGauge({ score }) {
+  const color = score >= 75 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+  const radius = 18;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (score / 100) * circumference;
+
+  return (
+    <div className="relative flex items-center justify-center" style={{ width: 48, height: 48 }}>
+      <svg width="48" height="48" className="transform -rotate-90">
+        <circle cx="24" cy="24" r={radius} stroke="#1e293b" strokeWidth="4" fill="none" />
+        <circle
+          cx="24" cy="24" r={radius}
+          stroke={color}
+          strokeWidth="4"
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          style={{ transition: 'stroke-dashoffset 0.8s ease-out' }}
+        />
+      </svg>
+      <span className="absolute text-[11px] font-extrabold font-mono" style={{ color }}>
+        {Math.round(score)}
+      </span>
+    </div>
+  );
+}
+
 export default function RouteCard({ route, isSelected, onSelect, fastestDuration }) {
   const colorScheme = ROUTE_COLORS[route.route_id] || ROUTE_COLORS.route_1;
   const isFastest = route.route_id === 'route_1';
+  const viability = route.viability;
+  const statusKey = viability?.status || 'CANDIDATE';
+  const statusCfg = STATUS_CONFIG[statusKey] || STATUS_CONFIG.CANDIDATE;
 
   const timeDiffMin = !isFastest && fastestDuration 
     ? Math.round(route.travel_time_min - fastestDuration)
@@ -25,9 +64,10 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
           : 'border-slate-800 bg-slate-900/80 hover:bg-slate-800/80 hover:border-slate-700'
       }`}
     >
+      {/* Top Row: Route ID + Status Badge */}
       <div className="flex items-start justify-between mb-2">
-        <div>
-          <div className="flex items-center space-x-2">
+        <div className="flex-1">
+          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
             <span className={`text-[10px] font-extrabold uppercase font-mono px-2 py-0.5 rounded ${colorScheme.badge}`}>
               {route.route_id.toUpperCase().replace('_', ' ')}
             </span>
@@ -36,17 +76,22 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
                 Fastest
               </span>
             )}
+            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${statusCfg.bg} ${statusCfg.text} ${statusCfg.border}`}>
+              {statusCfg.label}
+            </span>
           </div>
           <h3 className="text-sm font-bold text-slate-100 mt-1">
             {route.tag || `Corridor ${route.route_id}`}
           </h3>
         </div>
 
-        {isSelected && (
-          <CheckCircle2 className={`h-5 w-5 ${colorScheme.text}`} />
+        {/* Viability Gauge */}
+        {viability && (
+          <ViabilityGauge score={viability.score} />
         )}
       </div>
 
+      {/* Metrics Grid */}
       <div className="grid grid-cols-2 gap-3 py-2 my-2 border-y border-slate-800/60">
         <div>
           <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
@@ -81,11 +126,66 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
         </div>
       </div>
 
+      {/* Viability & Bottleneck Bar */}
+      {viability && (
+        <div className="space-y-2 mb-2">
+          {/* Hazard Exposure Bar */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-[10px] font-mono">
+              <span className="text-slate-400 uppercase font-semibold">Hazard Exposure</span>
+              <span className={viability.hazard_exposure_pct > 20 ? 'text-amber-400 font-bold' : 'text-slate-300'}>
+                {viability.hazard_exposure_pct.toFixed(0)}%
+              </span>
+            </div>
+            <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ${
+                  viability.hazard_exposure_pct > 30 ? 'bg-rose-500' :
+                  viability.hazard_exposure_pct > 15 ? 'bg-amber-500' : 'bg-emerald-500'
+                }`}
+                style={{ width: `${Math.min(100, viability.hazard_exposure_pct)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Bottleneck Count */}
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-slate-400 font-mono flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              Bottlenecks
+            </span>
+            <div className="flex items-center gap-2">
+              {viability.critical_bottleneck_count > 0 && (
+                <span className="text-[10px] font-bold text-rose-400 bg-rose-950 px-1.5 py-0.5 rounded border border-rose-800/60 font-mono">
+                  {viability.critical_bottleneck_count} Critical
+                </span>
+              )}
+              <span className="text-slate-300 font-mono font-bold">
+                {viability.bottleneck_count} total
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection Reasons */}
+      {viability && viability.rejection_reasons && viability.rejection_reasons.length > 0 && (
+        <div className="mb-2 p-2 bg-rose-950/60 border border-rose-800/60 rounded-lg">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold text-rose-400 uppercase mb-1">
+            <ShieldX className="h-3 w-3" />
+            Rejection Reason
+          </div>
+          {viability.rejection_reasons.map((reason, i) => (
+            <p key={i} className="text-[11px] text-rose-300/80 font-mono">{reason}</p>
+          ))}
+        </div>
+      )}
+
       {/* Infrastructure & Bridge Summary */}
       {route.infrastructure_summary && route.infrastructure_summary.total_bridges > 0 && (
         <div className="mb-2 py-1.5 px-2.5 bg-slate-950/80 border border-slate-800 rounded-lg text-xs flex items-center justify-between">
           <span className="text-slate-300 flex items-center gap-1.5 font-mono text-[11px]">
-            <span>🌉</span>
+            <Layers className="h-3.5 w-3.5 text-cyan-400" />
             <strong>{route.infrastructure_summary.total_bridges} NBI Bridges</strong>
           </span>
           {route.infrastructure_summary.aging_bridges > 0 ? (
@@ -102,7 +202,10 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
 
       <div className="flex items-center justify-between pt-1">
         <span className="text-xs text-slate-400">
-          Candidate Evacuation Corridor
+          {statusKey === 'PRIMARY' ? 'Recommended Evacuation Corridor' :
+           statusKey === 'BACKUP' ? 'Secondary Backup Corridor' :
+           statusKey === 'REJECTED' ? 'Fragile Corridor — Not Recommended' :
+           'Candidate Evacuation Corridor'}
         </span>
         <button
           onClick={(e) => {

@@ -6,6 +6,8 @@ from app.services.cache import cache_service
 
 logger = logging.getLogger(__name__)
 
+BATCH_SIZE = 80  # Open-Meteo limit is 100 points per request
+
 
 class OpenMeteoService:
     def __init__(self):
@@ -17,7 +19,7 @@ class OpenMeteoService:
         points: List[Tuple[float, float]]
     ) -> List[Optional[Dict[str, Any]]]:
         """
-        Fetch elevations for a list of (lat, lon) tuples using Open-Meteo API in bulk.
+        Fetch elevations for a list of (lat, lon) tuples using Open-Meteo API in bulk chunks.
         Returns a list of dicts with 'elevation_m' and 'elevation_source'.
         """
         if not points:
@@ -42,35 +44,40 @@ class OpenMeteoService:
         if not uncached_indices:
             return results
 
-        # Query Open-Meteo in bulk for uncached points
-        try:
-            lat_str = ",".join(str(lat) for lat in uncached_lats)
-            lon_str = ",".join(str(lon) for lon in uncached_lons)
-            url = f"{self.base_url}?latitude={lat_str}&longitude={lon_str}"
+        # Process uncached in batches of up to BATCH_SIZE
+        for chunk_start in range(0, len(uncached_indices), BATCH_SIZE):
+            chunk_indices = uncached_indices[chunk_start:chunk_start + BATCH_SIZE]
+            chunk_lats = uncached_lats[chunk_start:chunk_start + BATCH_SIZE]
+            chunk_lons = uncached_lons[chunk_start:chunk_start + BATCH_SIZE]
 
-            logger.info(f"📡 Querying Open-Meteo elevation API for {len(uncached_indices)} points...")
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    elevations = data.get("elevation", [])
-                    
-                    for i, orig_idx in enumerate(uncached_indices):
-                        if i < len(elevations) and elevations[i] is not None:
-                            elev_m = float(elevations[i])
-                            item = {
-                                "elevation_m": elev_m,
-                                "elevation_source": "Open-Meteo DEM (90m)"
-                            }
-                            results[orig_idx] = item
-                            lat, lon = uncached_lats[i], uncached_lons[i]
-                            cache_key = f"open_meteo:elevation:{round(lat, 4)},{round(lon, 4)}"
-                            cache_service.set(cache_key, item)
-                    logger.info(f"✅ Open-Meteo elevation bulk fetch success ({len(elevations)} points)")
-                else:
-                    logger.warning(f"⚠️ Open-Meteo API returned status {resp.status_code}: {resp.text[:150]}")
-        except Exception as e:
-            logger.warning(f"❌ Open-Meteo API request failed: {e}")
+            try:
+                lat_str = ",".join(str(lat) for lat in chunk_lats)
+                lon_str = ",".join(str(lon) for lon in chunk_lons)
+                url = f"{self.base_url}?latitude={lat_str}&longitude={lon_str}"
+
+                logger.info(f"Querying Open-Meteo elevation chunk ({len(chunk_indices)} points)...")
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    resp = await client.get(url)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        elevations = data.get("elevation", [])
+                        
+                        for i, orig_idx in enumerate(chunk_indices):
+                            if i < len(elevations) and elevations[i] is not None:
+                                elev_m = float(elevations[i])
+                                item = {
+                                    "elevation_m": elev_m,
+                                    "elevation_source": "Open-Meteo DEM (90m)"
+                                }
+                                results[orig_idx] = item
+                                lat, lon = chunk_lats[i], chunk_lons[i]
+                                cache_key = f"open_meteo:elevation:{round(lat, 4)},{round(lon, 4)}"
+                                cache_service.set(cache_key, item)
+                        logger.info(f"Open-Meteo elevation chunk fetch success ({len(elevations)} points)")
+                    else:
+                        logger.warning(f"Open-Meteo API returned status {resp.status_code}: {resp.text[:150]}")
+            except Exception as e:
+                logger.warning(f"Open-Meteo API request failed: {e}")
 
         return results
 

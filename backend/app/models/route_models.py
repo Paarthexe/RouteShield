@@ -28,6 +28,48 @@ class RouteSample(BaseModel):
     nbi_bridges: Optional[List[Dict[str, Any]]] = None
     mireye_data: Optional[Dict[str, Any]] = None
     hazards: Optional[List[Dict[str, Any]]] = None
+    slope_pct: Optional[float] = None
+    hazard_score: Optional[float] = None
+    is_mireye_probed: bool = False
+
+
+class BottleneckInfo(BaseModel):
+    sample_id: str
+    latitude: float
+    longitude: float
+    distance_from_origin_m: float
+    bsi_score: float
+    hazard_risk: float
+    bridge_vulnerability: float
+    terrain_penalty: float
+    severity_label: str  # "Critical", "Moderate", "Low"
+    description: str
+
+
+class RouteViability(BaseModel):
+    score: float  # 0-100
+    status: str  # "PRIMARY", "BACKUP", "REJECTED", "ALTERNATIVE"
+    hazard_exposure_pct: float
+    bottleneck_count: int
+    critical_bottleneck_count: int
+    max_bsi: float
+    rejection_reasons: List[str] = []
+
+
+class AgentStep(BaseModel):
+    step_number: int
+    action: str
+    detail: str
+
+
+class AgentDecision(BaseModel):
+    primary_route_id: Optional[str] = None
+    backup_route_id: Optional[str] = None
+    rejected_route_ids: List[str] = []
+    executive_summary: str = ""
+    trade_off_explanation: str = ""
+    steps: List[AgentStep] = []
+    mireye_insight: Optional[str] = None
 
 
 class Route(BaseModel):
@@ -41,6 +83,8 @@ class Route(BaseModel):
     samples: List[RouteSample] = []
     infrastructure_summary: Optional[Dict[str, Any]] = None
     viability_score: Optional[float] = None
+    viability: Optional[RouteViability] = None
+    bottlenecks: List[BottleneckInfo] = []
 
 
 class RouteAnalyzeResponse(BaseModel):
@@ -50,3 +94,4 @@ class RouteAnalyzeResponse(BaseModel):
     routes: List[Route]
     sample_interval_m: float
     cache_hit: bool = False
+    agent_decision: Optional[AgentDecision] = None

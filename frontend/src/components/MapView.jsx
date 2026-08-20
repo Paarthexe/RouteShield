@@ -37,6 +37,35 @@ const createCustomMarkerIcon = (label, colorBg, borderColor) => {
   });
 };
 
+const createBottleneckIcon = (severity) => {
+  const color = severity === 'Critical' ? '#ef4444' : '#f59e0b';
+  const size = severity === 'Critical' ? 24 : 20;
+  return L.divIcon({
+    className: 'bottleneck-marker',
+    html: `
+      <div style="
+        background-color: ${color}25;
+        border: 2px solid ${color};
+        color: ${color};
+        width: ${size}px;
+        height: ${size}px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 11px;
+        box-shadow: 0 0 10px ${color}80;
+        animation: pulse 2s infinite;
+      ">
+        !
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+};
+
 const originIcon = createCustomMarkerIcon('A', '#10b981', '#ffffff');
 const destinationIcon = createCustomMarkerIcon('B', '#f43f5e', '#ffffff');
 
@@ -148,6 +177,9 @@ export default function MapView({
   if (originObj) previewPositions.push([originObj.latitude, originObj.longitude]);
   waypointObjs.forEach(wp => previewPositions.push([wp.latitude, wp.longitude]));
   if (destinationObj) previewPositions.push([destinationObj.latitude, destinationObj.longitude]);
+
+  // Build bottleneck data for the selected route
+  const bottlenecks = selectedRouteObj?.bottlenecks || [];
 
   return (
     <div className="relative w-full h-full min-h-[600px] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
@@ -302,21 +334,31 @@ export default function MapView({
         {showSamples && selectedRouteObj && selectedRouteObj.samples && (
           selectedRouteObj.samples.map(sample => {
             const isSampleSelected = selectedSample && selectedSample.sample_id === sample.sample_id;
+            const isMireyeProbed = sample.is_mireye_probed;
+            const hazardScore = sample.hazard_score || 0;
             const distKm = (sample.distance_from_origin_m / 1000.0).toFixed(2);
+
+            // Color by hazard score
+            let fillColor = '#06b6d4'; // Default cyan
+            if (hazardScore > 0.5) fillColor = '#ef4444'; // Red
+            else if (hazardScore > 0.3) fillColor = '#f59e0b'; // Amber
+            else if (hazardScore > 0.1) fillColor = '#22d3ee'; // Light cyan
+
+            const radius = isSampleSelected ? 7 : isMireyeProbed ? 6 : 4;
 
             return (
               <CircleMarker
                 key={sample.sample_id}
                 center={[sample.latitude, sample.longitude]}
-                radius={isSampleSelected ? 7 : 4}
+                radius={radius}
                 eventHandlers={{
                   click: () => onSelectSample(sample)
                 }}
                 pathOptions={{
-                  fillColor: isSampleSelected ? '#38bdf8' : '#06b6d4',
+                  fillColor: isSampleSelected ? '#38bdf8' : fillColor,
                   fillOpacity: 0.9,
-                  color: isSampleSelected ? '#ffffff' : '#0f172a',
-                  weight: isSampleSelected ? 3 : 1.5
+                  color: isMireyeProbed ? '#10b981' : isSampleSelected ? '#ffffff' : '#0f172a',
+                  weight: isMireyeProbed ? 3 : isSampleSelected ? 3 : 1.5
                 }}
               >
                 <Popup>
@@ -327,15 +369,55 @@ export default function MapView({
                     <div className="font-bold text-slate-100">
                       Distance: <span className="text-cyan-300 font-mono">{distKm} km</span>
                     </div>
-                    <div className="text-[10px] text-slate-400 font-mono">
-                      {sample.latitude.toFixed(5)}, {sample.longitude.toFixed(5)}
-                    </div>
+                    {isMireyeProbed && (
+                      <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700 font-mono inline-block">
+                        Mireye Sample
+                      </span>
+                    )}
+                    {hazardScore > 0 && (
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        Hazard Score: <span className={hazardScore > 0.3 ? 'text-amber-400 font-bold' : 'text-slate-300'}>{hazardScore.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {sample.slope_pct != null && (
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        Slope: <span className={Math.abs(sample.slope_pct) > 8 ? 'text-rose-400 font-bold' : 'text-slate-300'}>{sample.slope_pct.toFixed(1)}%</span>
+                      </div>
+                    )}
                   </div>
                 </Popup>
               </CircleMarker>
             );
           })
         )}
+
+        {/* Bottleneck Warning Markers */}
+        {showSamples && bottlenecks.map((bn, idx) => (
+          <Marker
+            key={`bn-${idx}`}
+            position={[bn.latitude, bn.longitude]}
+            icon={createBottleneckIcon(bn.severity_label)}
+          >
+            <Popup>
+              <div className="p-1 space-y-1 font-sans text-xs max-w-[220px]">
+                <span className={`text-[10px] font-bold uppercase font-mono block ${
+                  bn.severity_label === 'Critical' ? 'text-rose-400' : 'text-amber-400'
+                }`}>
+                  {bn.severity_label} Bottleneck
+                </span>
+                <div className="text-[10px] text-slate-300 font-mono">
+                  BSI: <span className="font-bold">{bn.bsi_score.toFixed(2)}</span>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  {bn.description}
+                </p>
+                <div className="text-[9px] text-slate-500 font-mono">
+                  {(bn.distance_from_origin_m / 1000).toFixed(1)} km from origin
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
 
       {/* Legend & Controls Overlay - ONLY SHOWN IF ROUTES ARE PRESENT */}
@@ -362,9 +444,29 @@ export default function MapView({
               </div>
             )}
           </div>
+          {/* Hazard color key */}
+          <div className="border-t border-slate-800 pt-1 space-y-1 text-[10px]">
+            <div className="flex items-center space-x-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+              <span className="text-slate-400">Low Risk Sample</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="h-2 w-2 rounded-full bg-amber-500"></span>
+              <span className="text-slate-400">Moderate Hazard</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="h-2 w-2 rounded-full bg-rose-500"></span>
+              <span className="text-slate-400">High Hazard</span>
+            </div>
+            {bottlenecks.length > 0 && (
+              <div className="flex items-center space-x-2">
+                <span className="h-3 w-3 rounded-sm bg-rose-500/20 border border-rose-500 text-[9px] font-bold flex items-center justify-center text-rose-400">!</span>
+                <span className="text-slate-400">Bottleneck ({bottlenecks.length})</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
-

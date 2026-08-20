@@ -1,5 +1,5 @@
 import React from 'react';
-import { Target, MapPin, X, Info, Layers, Mountain, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { Target, MapPin, X, Info, Layers, Mountain, ShieldAlert, CheckCircle2, Zap, AlertTriangle } from 'lucide-react';
 
 export default function SampleInspector({ sample, onClose }) {
   if (!sample) return null;
@@ -7,6 +7,9 @@ export default function SampleInspector({ sample, onClose }) {
   const distKm = (sample.distance_from_origin_m / 1000.0).toFixed(2);
   const bridges = sample.nbi_bridges || [];
   const mireye = sample.mireye_data || null;
+  const isMireyeProbed = sample.is_mireye_probed;
+  const slopePct = sample.slope_pct;
+  const hazardScore = sample.hazard_score;
 
   return (
     <div className="bg-slate-900 border border-slate-700/80 rounded-xl p-4 shadow-2xl space-y-3 relative animate-fadeIn max-h-[520px] overflow-y-auto">
@@ -22,16 +25,24 @@ export default function SampleInspector({ sample, onClose }) {
         <div className="h-7 w-7 rounded-md bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
           <Target className="h-4 w-4" />
         </div>
-        <div>
+        <div className="flex-1">
           <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
             Sample Point Inspector
           </h4>
-          <p className="text-[11px] text-cyan-400 font-mono">
-            {sample.sample_id}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-[11px] text-cyan-400 font-mono">
+              {sample.sample_id}
+            </p>
+            {isMireyeProbed && (
+              <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700 font-mono">
+                Mireye Sample
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
+      {/* Location + Distance Grid */}
       <div className="grid grid-cols-2 gap-2 bg-slate-950/80 p-3 rounded-lg border border-slate-800 text-xs">
         <div>
           <span className="text-[10px] text-slate-400 uppercase font-semibold block">
@@ -58,15 +69,69 @@ export default function SampleInspector({ sample, onClose }) {
         </div>
       </div>
 
+      {/* Slope & Hazard Score Row */}
+      {(slopePct != null || hazardScore != null) && (
+        <div className="grid grid-cols-2 gap-2">
+          {slopePct != null && (
+            <div className={`p-2.5 rounded-lg border text-xs ${
+              Math.abs(slopePct) > 8
+                ? 'bg-rose-950/50 border-rose-800/60'
+                : Math.abs(slopePct) > 3
+                ? 'bg-amber-950/30 border-amber-800/40'
+                : 'bg-slate-950/80 border-slate-800'
+            }`}>
+              <span className="text-[9px] text-slate-400 block uppercase font-semibold">Terrain Slope</span>
+              <span className={`text-sm font-bold font-mono ${
+                Math.abs(slopePct) > 8 ? 'text-rose-400' :
+                Math.abs(slopePct) > 3 ? 'text-amber-400' : 'text-slate-100'
+              }`}>
+                {slopePct > 0 ? '+' : ''}{slopePct.toFixed(1)}%
+              </span>
+              <span className="text-[9px] text-slate-500 block">
+                {Math.abs(slopePct) > 15 ? 'Extreme Grade' :
+                 Math.abs(slopePct) > 8 ? 'Steep Grade' :
+                 Math.abs(slopePct) > 3 ? 'Moderate Grade' : 'Flat/Gentle'}
+              </span>
+            </div>
+          )}
+          {hazardScore != null && (
+            <div className={`p-2.5 rounded-lg border text-xs ${
+              hazardScore > 0.5
+                ? 'bg-rose-950/50 border-rose-800/60'
+                : hazardScore > 0.3
+                ? 'bg-amber-950/30 border-amber-800/40'
+                : 'bg-slate-950/80 border-slate-800'
+            }`}>
+              <span className="text-[9px] text-slate-400 block uppercase font-semibold">Hazard Risk</span>
+              <span className={`text-sm font-bold font-mono ${
+                hazardScore > 0.5 ? 'text-rose-400' :
+                hazardScore > 0.3 ? 'text-amber-400' : 'text-emerald-400'
+              }`}>
+                {(hazardScore * 100).toFixed(0)}%
+              </span>
+              <span className="text-[9px] text-slate-500 block">
+                {hazardScore > 0.5 ? 'High Risk' :
+                 hazardScore > 0.3 ? 'Moderate Risk' :
+                 hazardScore > 0.1 ? 'Low Risk' : 'Minimal'}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Mireye Physical-World Data Section */}
       {mireye && (
         <div className="bg-slate-950 border border-cyan-900/50 p-3 rounded-lg text-xs space-y-2">
           <div className="flex items-center justify-between">
             <h5 className="text-[11px] font-bold text-cyan-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
-              <Mountain className="h-3.5 w-3.5 text-cyan-400" /> Mireye Physical Environmental Facts
+              <Mountain className="h-3.5 w-3.5 text-cyan-400" /> Physical Environmental Facts
             </h5>
-            <span className="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded font-mono">
-              Live Mireye API
+            <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono border ${
+              isMireyeProbed
+                ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                : 'bg-cyan-950 text-cyan-300 border-cyan-800'
+            }`}>
+              {isMireyeProbed ? 'Mireye + Open-Meteo' : 'Open-Meteo DEM'}
             </span>
           </div>
 
@@ -84,7 +149,9 @@ export default function SampleInspector({ sample, onClose }) {
             {mireye.seismic_pga_g !== undefined && (
               <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
                 <span className="text-[9px] text-slate-400 block uppercase">Seismic PGA (50yr)</span>
-                <span className="text-xs font-bold text-amber-300">{mireye.seismic_pga_g.toFixed(2)} g</span>
+                <span className={`text-xs font-bold ${mireye.seismic_pga_g >= 0.4 ? 'text-rose-400' : mireye.seismic_pga_g >= 0.2 ? 'text-amber-300' : 'text-slate-100'}`}>
+                  {mireye.seismic_pga_g.toFixed(2)} g
+                </span>
                 <span className="text-[9px] text-slate-500 block truncate" title={mireye.seismic_source}>
                   {mireye.seismic_source || 'USGS NSHM'}
                 </span>
@@ -99,10 +166,10 @@ export default function SampleInspector({ sample, onClose }) {
         <div className="space-y-2 pt-1">
           <div className="flex items-center justify-between">
             <h5 className="text-[11px] font-bold text-amber-400 font-mono uppercase tracking-wider flex items-center gap-1.5">
-              <span>🌉</span> FHWA National Bridge Inventory ({bridges.length})
+              <Layers className="h-3.5 w-3.5 text-amber-400" /> FHWA National Bridge Inventory ({bridges.length})
             </h5>
             <span className="text-[10px] bg-amber-950 text-amber-300 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono">
-              Live NBI Data
+              NBI Data
             </span>
           </div>
 
@@ -124,6 +191,8 @@ export default function SampleInspector({ sample, onClose }) {
                   <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
                     b.condition_label.includes('Poor')
                       ? 'bg-rose-950 text-rose-300 border-rose-800'
+                      : b.condition_label.includes('Fair')
+                      ? 'bg-amber-950 text-amber-300 border-amber-800'
                       : 'bg-emerald-950 text-emerald-300 border-emerald-800'
                   }`}>
                     {b.condition_label}

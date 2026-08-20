@@ -15,9 +15,9 @@ from contextlib import asynccontextmanager
 async def lifespan(app: FastAPI):
     if settings.MIREYE_API_KEY:
         masked_key = settings.MIREYE_API_KEY[:8] + "..." if len(settings.MIREYE_API_KEY) > 8 else "***"
-        logging.info(f"🔑 Mireye API Key detected: ACTIVE ({masked_key})")
+        logging.info(f"Mireye API Key configured: {masked_key}")
     else:
-        logging.warning("⚠️ Mireye API Key NOT detected in environment. Using OpenStreetMap Nominatim fallback.")
+        logging.warning("Mireye API Key not detected in environment. Please configure MIREYE_API_KEY.")
     yield
 
 app = FastAPI(title="RouteShield", version="0.1.0", lifespan=lifespan)

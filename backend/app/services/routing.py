@@ -3,9 +3,10 @@ import httpx
 from typing import List, Optional
 from fastapi import HTTPException, status
 from app.config import settings
-from app.models.route_models import Coordinate, Route, GeoJSONLineString
+from app.models.route_models import Coordinate, Route, GeoJSONLineString, AgentDecision, Location
 from app.services.sampling import sampling_service
 from app.services.cache import cache_service
+from app.services.agent_service import run_agent_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -24,17 +25,6 @@ class RoutingService:
     ) -> List[Route]:
         interval = sample_interval_m or settings.ROUTE_SAMPLE_INTERVAL_M
         w_list = waypoints or []
-
-        w_cache_str = ":".join([f"{round(w.latitude, 5)},{round(w.longitude, 5)}" for w in w_list])
-        cache_key = (
-            f"route:{round(origin.latitude, 5)},{round(origin.longitude, 5)}"
-            f":w_{w_cache_str}"
-            f":{round(destination.latitude, 5)},{round(destination.longitude, 5)}"
-            f":int_{int(interval)}"
-        )
-        cached = cache_service.get(cache_key)
-        if cached:
-            return [Route(**r) for r in cached]
 
         raw_routes = await self._fetch_osrm_routes(origin, destination, w_list)
         if not raw_routes:
@@ -97,8 +87,32 @@ class RoutingService:
             )
             parsed_routes.append(route_obj)
 
-        cache_service.set(cache_key, [r.model_dump() for r in parsed_routes])
         return parsed_routes
+
+    async def generate_and_analyze(
+        self,
+        origin: Coordinate,
+        destination: Coordinate,
+        origin_loc: Location,
+        destination_loc: Location,
+        waypoints: Optional[List[Coordinate]] = None,
+        sample_interval_m: Optional[float] = None
+    ) -> tuple:
+        """
+        Generate routes AND run the full agent analysis pipeline.
+        Returns (routes, agent_decision).
+        """
+        routes = await self.generate_candidate_routes(
+            origin=origin,
+            destination=destination,
+            waypoints=waypoints,
+            sample_interval_m=sample_interval_m
+        )
+
+        # Run agentic analysis pipeline
+        agent_decision = await run_agent_analysis(routes, origin_loc, destination_loc)
+
+        return routes, agent_decision
 
     async def _fetch_osrm_routes(
         self,
@@ -114,6 +128,7 @@ class RoutingService:
         path_coords = ";".join(coord_strings)
         url = f"{self.osrm_base_url}/route/v1/driving/{path_coords}"
 
+        routes: List[dict] = []
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.get(url, params={
@@ -125,14 +140,82 @@ class RoutingService:
                 if resp.status_code == 200:
                     data = resp.json()
                     if data.get("code") == "Ok":
-                        return data.get("routes", [])
-                logger.warning(f"OSRM returned {resp.status_code}")
+                        routes = data.get("routes", [])
+                else:
+                    logger.warning(f"OSRM returned {resp.status_code}")
         except httpx.TimeoutException:
             raise HTTPException(status_code=504, detail="Routing service timed out.")
         except Exception as e:
             logger.error(f"OSRM error: {e}")
             raise HTTPException(status_code=503, detail="Routing service unreachable.")
-        return []
+
+        # If OSRM returns < 3 routes and no custom waypoints were specified,
+        # synthesize distinct lateral bypass corridors via perpendicular lateral anchors
+        if len(routes) < 3 and not waypoints:
+            synthesized = await self._synthesize_alternative_corridors(origin, destination, existing_routes=routes)
+            routes.extend(synthesized)
+
+        # Sort candidate routes by duration so route_1 is the fastest
+        routes.sort(key=lambda r: float(r.get("duration", 0.0)))
+        return routes[:4]  # Up to 4 distinct corridors
+
+    async def _synthesize_alternative_corridors(
+        self,
+        origin: Coordinate,
+        destination: Coordinate,
+        existing_routes: List[dict]
+    ) -> List[dict]:
+        """
+        Generate lateral bypass corridors by querying OSRM through perpendicular midpoint anchors.
+        Ensures RouteShield discovers real alternative evacuation paths even when OSRM defaults to 1.
+        """
+        lat1, lon1 = origin.latitude, origin.longitude
+        lat2, lon2 = destination.latitude, destination.longitude
+
+        mid_lat = (lat1 + lat2) / 2.0
+        mid_lon = (lon1 + lon2) / 2.0
+        d_lat = lat2 - lat1
+        d_lon = lon2 - lon1
+
+        # Perpendicular lateral offsets (both directions, moderate & wide)
+        offsets = [0.35, -0.35, 0.55, -0.55]
+        new_routes: List[dict] = []
+
+        existing_distances = [float(r.get("distance", 0.0)) for r in existing_routes]
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            for scale in offsets:
+                if len(existing_routes) + len(new_routes) >= 3:
+                    break
+
+                w_lat = mid_lat - d_lon * scale
+                w_lon = mid_lon + d_lat * scale
+
+                path_str = f"{lon1},{lat1};{w_lon:.5f},{w_lat:.5f};{lon2},{lat2}"
+                synth_url = f"{self.osrm_base_url}/route/v1/driving/{path_str}"
+
+                try:
+                    resp = await client.get(synth_url, params={
+                        "overview": "full",
+                        "geometries": "geojson",
+                        "steps": "false"
+                    })
+                    if resp.status_code == 200:
+                        d = resp.json()
+                        if d.get("code") == "Ok" and d.get("routes"):
+                            cand = d["routes"][0]
+                            cand_dist = float(cand.get("distance", 0.0))
+                            
+                            # Deduplicate if distance is within 5% of any existing route
+                            is_duplicate = any(abs(cand_dist - ed) / max(1.0, ed) < 0.05 for ed in (existing_distances + [float(r.get("distance", 0.0)) for r in new_routes]))
+                            
+                            if not is_duplicate and cand_dist > 0:
+                                logger.info(f"Synthesized distinct bypass corridor: {cand_dist/1000.0:.1f} km ({float(cand.get('duration', 0.0))/60.0:.1f} min)")
+                                new_routes.append(cand)
+                except Exception as e:
+                    logger.debug(f"Lateral bypass query failed: {e}")
+
+        return new_routes
 
 
 routing_service = RoutingService()
