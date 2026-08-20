@@ -8,7 +8,7 @@ import ErrorNotice from './components/ErrorNotice';
 import AgentBriefing from './components/AgentBriefing';
 import ElevationProfile from './components/ElevationProfile';
 import { analyzeRoutes, resolveLocation } from './services/api';
-import { Layers, Eye, EyeOff, MapPin, Compass, ShieldAlert, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Layers, Eye, EyeOff, Compass, ChevronLeft, ChevronRight, Sliders } from 'lucide-react';
 
 export default function App() {
   const [origin, setOrigin] = useState('');
@@ -22,14 +22,12 @@ export default function App() {
   const [selectedSample, setSelectedSample] = useState(null);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [pickerMode, setPickerMode] = useState(null); // 'origin' | 'destination' | 'waypoint_N' | null
+  const [pickerMode, setPickerMode] = useState(null);
 
-  // Live resolved location state for immediate map markers when typing
   const [resolvedOrigin, setResolvedOrigin] = useState(null);
   const [resolvedDestination, setResolvedDestination] = useState(null);
   const [resolvedWaypoints, setResolvedWaypoints] = useState([]);
 
-  // Helper to parse raw numeric coordinate strings
   const parseCoords = (val) => {
     if (!val || typeof val !== 'string') return null;
     const parts = val.split(',').map(s => parseFloat(s.trim()));
@@ -39,7 +37,6 @@ export default function App() {
     return null;
   };
 
-  // Live geocoding resolution for Origin
   useEffect(() => {
     if (!origin.trim()) {
       setResolvedOrigin(null);
@@ -54,14 +51,11 @@ export default function App() {
       try {
         const loc = await resolveLocation(origin);
         setResolvedOrigin(loc);
-      } catch (e) {
-        // live lookup fail ignored until submit
-      }
+      } catch (e) {}
     }, 500);
     return () => clearTimeout(timer);
   }, [origin]);
 
-  // Live geocoding resolution for Destination
   useEffect(() => {
     if (!destination.trim()) {
       setResolvedDestination(null);
@@ -76,14 +70,11 @@ export default function App() {
       try {
         const loc = await resolveLocation(destination);
         setResolvedDestination(loc);
-      } catch (e) {
-        // live lookup fail ignored until submit
-      }
+      } catch (e) {}
     }, 500);
     return () => clearTimeout(timer);
   }, [destination]);
 
-  // Live geocoding resolution for Waypoints
   useEffect(() => {
     const timer = setTimeout(async () => {
       const promises = waypoints.map(async (wp) => {
@@ -118,7 +109,6 @@ export default function App() {
       const data = await analyzeRoutes(origin, destination, sampleInterval, waypoints);
       setAnalysisData(data);
 
-      // Auto-select the PRIMARY route if agent made a decision
       if (data.agent_decision && data.agent_decision.primary_route_id) {
         setSelectedRouteId(data.agent_decision.primary_route_id);
       } else if (data.routes && data.routes.length > 0) {
@@ -126,11 +116,11 @@ export default function App() {
       }
 
       if (data.routes && data.routes.length === 1) {
-        setNotice("Only one feasible route was returned for this corridor.");
+        setNotice("Only one feasible corridor was discovered for this terrain.");
       }
     } catch (err) {
       console.error("Analysis Error:", err);
-      setError(err.message || "Failed to analyze evacuation routes.");
+      setError(err.message || "Failed to analyze evacuation corridors.");
       setAnalysisData(null);
     } finally {
       setLoading(false);
@@ -141,13 +131,13 @@ export default function App() {
   const fastestDuration = analysisData?.routes?.[0]?.travel_time_min;
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 font-sans">
+    <div className="min-h-screen flex flex-col bg-zinc-950 text-zinc-100 font-sans">
       <Header />
 
-      <main className="flex-1 w-full max-w-[1800px] mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <main className="flex-1 w-full max-w-[1720px] mx-auto p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         
-        {/* Left Column: Form & Route Cards & Agent Briefing (4 cols on lg) */}
-        <div className="lg:col-span-4 space-y-5">
+        {/* Left Column: Dispatch Panel & Corridor Details (4 cols on lg) */}
+        <div className="lg:col-span-4 space-y-4">
           <LocationInput
             origin={origin}
             setOrigin={setOrigin}
@@ -178,7 +168,7 @@ export default function App() {
             />
           )}
 
-          {/* Candidate Evacuation Corridors Slider / Slideshow */}
+          {/* Candidate Corridors Deck */}
           {analysisData && analysisData.routes && analysisData.routes.length > 0 && (() => {
             const currentRouteIndex = analysisData.routes.findIndex(r => r.route_id === selectedRouteId);
             const activeIndex = currentRouteIndex >= 0 ? currentRouteIndex : 0;
@@ -198,39 +188,33 @@ export default function App() {
             };
 
             return (
-              <div className="space-y-3 bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl">
-                {/* Slider Control Header */}
-                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 font-mono flex items-center gap-1.5">
-                    <Compass className="h-4 w-4 text-cyan-400" />
-                    Candidate Corridor {activeIndex + 1} of {totalRoutes}
-                  </h3>
+              <div className="space-y-3 bg-zinc-900/90 border border-zinc-800 rounded-xl p-4 shadow-xl">
+                {/* Corridor Tabs Header */}
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
+                  <div className="flex items-center gap-1.5 font-mono text-xs text-zinc-300 font-semibold uppercase">
+                    <Compass className="h-3.5 w-3.5 text-sky-400" />
+                    <span>Corridor {activeIndex + 1} of {totalRoutes}</span>
+                  </div>
 
                   {totalRoutes > 1 && (
-                    <div className="flex items-center space-x-1.5">
-                      <button
-                        type="button"
-                        onClick={handlePrevRoute}
-                        title="Previous Corridor"
-                        className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-all cursor-pointer flex items-center gap-0.5 text-xs font-semibold px-2"
-                      >
-                        <ChevronLeft className="h-3.5 w-3.5" />
-                        <span>Prev</span>
-                      </button>
-
-                      <span className="text-[11px] font-mono font-bold text-cyan-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
-                        {activeIndex + 1} / {totalRoutes}
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={handleNextRoute}
-                        title="Next Corridor"
-                        className="p-1 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-all cursor-pointer flex items-center gap-0.5 text-xs font-semibold px-2"
-                      >
-                        <span>Next</span>
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </button>
+                    <div className="flex items-center space-x-1">
+                      {analysisData.routes.map((rt, idx) => (
+                        <button
+                          key={rt.route_id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedRouteId(rt.route_id);
+                            setSelectedSample(null);
+                          }}
+                          className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                            rt.route_id === selectedRouteId
+                              ? 'bg-zinc-100 text-zinc-900 border-zinc-100 font-bold'
+                              : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-zinc-200'
+                          }`}
+                        >
+                          C{idx + 1}
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -245,50 +229,28 @@ export default function App() {
                     fastestDuration={fastestDuration}
                   />
                 )}
-
-                {/* Dots Indicator */}
-                {totalRoutes > 1 && (
-                  <div className="flex items-center justify-center space-x-2 pt-1">
-                    {analysisData.routes.map((rt, idx) => (
-                      <button
-                        key={rt.route_id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedRouteId(rt.route_id);
-                          setSelectedSample(null);
-                        }}
-                        title={`Switch to Corridor ${idx + 1}`}
-                        className={`h-2 rounded-full transition-all cursor-pointer ${
-                          idx === activeIndex
-                            ? 'w-6 bg-cyan-400 shadow-sm shadow-cyan-500/50'
-                            : 'w-2 bg-slate-700 hover:bg-slate-500'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                )}
               </div>
             );
           })()}
 
-          {/* Agent Decision Briefing Panel */}
+          {/* Assessment & Decision Briefing */}
           {analysisData?.agent_decision && (
             <AgentBriefing agentDecision={analysisData.agent_decision} />
           )}
         </div>
 
-        {/* Right Column: Map & Elevation Profile & Sampling Inspector (8 cols on lg) */}
+        {/* Right Column: Tactical Map, Terrain Elevation & Sample Inspector (8 cols on lg) */}
         <div className="lg:col-span-8 space-y-4">
           
           {/* Map Toolbar */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-md">
-            <div className="flex items-center space-x-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-300 font-mono">
-                Spatial View
+          <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-md">
+            <div className="flex items-center space-x-2.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-zinc-300 font-mono">
+                Geospatial Corridor HUD
               </span>
               {analysisData?.cache_hit && (
-                <span className="px-2 py-0.5 text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800 rounded">
-                  Cache Hit
+                <span className="px-2 py-0.5 text-[10px] font-mono bg-zinc-800 text-zinc-300 border border-zinc-700 rounded">
+                  Cached
                 </span>
               )}
             </div>
@@ -297,16 +259,16 @@ export default function App() {
             <div className="flex items-center space-x-3">
               <button
                 onClick={() => setShowSamples(!showSamples)}
-                className={`text-xs font-medium px-3 py-1.5 rounded-lg border flex items-center space-x-2 transition-all cursor-pointer ${
+                className={`text-xs font-mono px-3 py-1.5 rounded-lg border flex items-center space-x-2 transition-colors cursor-pointer ${
                   showSamples
-                    ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300'
-                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+                    ? 'bg-zinc-800 border-zinc-600 text-zinc-100'
+                    : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200'
                 }`}
               >
-                {showSamples ? <Eye className="h-3.5 w-3.5 text-cyan-400" /> : <EyeOff className="h-3.5 w-3.5" />}
-                <span>{showSamples ? 'Samples Visible' : 'Show Samples'}</span>
+                {showSamples ? <Eye className="h-3.5 w-3.5 text-sky-400" /> : <EyeOff className="h-3.5 w-3.5" />}
+                <span>{showSamples ? 'Samples Active' : 'Show Samples'}</span>
                 {selectedRouteObj?.samples && (
-                  <span className="ml-1 px-1.5 py-0.2 bg-slate-950 text-[10px] font-mono rounded text-cyan-400">
+                  <span className="ml-1 px-1.5 py-0.2 bg-zinc-950 text-[10px] font-mono rounded text-zinc-300 border border-zinc-700">
                     {selectedRouteObj.samples.length}
                   </span>
                 )}
@@ -315,7 +277,7 @@ export default function App() {
           </div>
 
           {/* Interactive Map View */}
-          <div className="h-[640px] w-full relative">
+          <div className="h-[620px] w-full relative">
             <MapView
               origin={analysisData?.origin}
               destination={analysisData?.destination}

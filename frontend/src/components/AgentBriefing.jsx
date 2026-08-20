@@ -1,17 +1,8 @@
 import React, { useState } from 'react';
-import { Compass, ChevronDown, ChevronUp, Zap, Shield, AlertTriangle, CheckCircle2, Info, FileText } from 'lucide-react';
-
-const STEP_ICONS = {
-  'Corridor Intake': Zap,
-  'Bottleneck Detection': AlertTriangle,
-  'Viability Assessment': Shield,
-  'Route Ranking': CheckCircle2,
-  'Mireye Deep Analysis': FileText,
-  'Decision Finalized': Compass,
-};
+import { Compass, ChevronDown, ChevronUp, Shield, AlertTriangle, CheckCircle2, FileText, ArrowRight } from 'lucide-react';
 
 export default function AgentBriefing({ agentDecision }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expandedTrace, setExpandedTrace] = useState(false);
 
   if (!agentDecision) return null;
 
@@ -26,141 +17,116 @@ export default function AgentBriefing({ agentDecision }) {
   } = agentDecision;
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-xl overflow-hidden">
-      {/* Header */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full px-4 py-3 flex items-center justify-between bg-gradient-to-r from-slate-900 to-slate-800 hover:from-slate-800 hover:to-slate-750 transition-all cursor-pointer"
-      >
+    <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-4 shadow-xl space-y-3.5">
+      {/* Verdict Header */}
+      <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
         <div className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center">
-            <Compass className="h-4 w-4 text-cyan-400" />
+          <div className="h-6 w-6 rounded bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-300">
+            <Shield className="h-3.5 w-3.5" />
           </div>
-          <div className="text-left">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-mono">
-              Corridor Evaluation & Decision
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-200 font-mono">
+              Corridor Risk Assessment
             </h3>
-            <p className="text-[10px] text-slate-400">
-              {steps.length} decision steps • {primary_route_id ? `Primary: ${primary_route_id.toUpperCase().replace('_', ' ')}` : 'Evaluating...'}
-            </p>
           </div>
         </div>
-        {expanded ? (
-          <ChevronUp className="h-4 w-4 text-slate-400" />
-        ) : (
-          <ChevronDown className="h-4 w-4 text-slate-400" />
+
+        {/* Primary recommendation badge */}
+        {primary_route_id && (
+          <div className="flex items-center gap-1.5 bg-emerald-950/70 border border-emerald-800/80 px-2.5 py-0.5 rounded text-[11px] font-mono text-emerald-300">
+            <span className="text-zinc-400">RECOMMENDED:</span>
+            <span className="font-bold">{primary_route_id.toUpperCase().replace('_', ' ')}</span>
+          </div>
         )}
-      </button>
+      </div>
 
-      {expanded && (
-        <div className="px-4 pb-4 space-y-3">
-          {/* Executive Summary */}
-          <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-3 mt-3">
-            <h4 className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 font-mono mb-1.5 flex items-center gap-1.5">
-              <Shield className="h-3 w-3" />
-              Executive Summary
-            </h4>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              {executive_summary}
-            </p>
+      {/* Executive Summary */}
+      <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-lg p-3 space-y-1">
+        <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-zinc-400 block">
+          Assessment Summary
+        </span>
+        <p className="text-xs text-zinc-300 leading-relaxed font-sans">
+          {executive_summary}
+        </p>
+      </div>
+
+      {/* Trade-Off Explanation */}
+      {trade_off_explanation && (
+        <div className="bg-zinc-950/80 border border-amber-900/30 rounded-lg p-3 space-y-1">
+          <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-amber-400">
+            <AlertTriangle className="h-3 w-3" />
+            <span>Speed vs Safety Trade-Off</span>
           </div>
+          <p className="text-xs text-zinc-300 leading-relaxed font-sans">
+            {trade_off_explanation}
+          </p>
+        </div>
+      )}
 
-          {/* Trade-Off Explanation */}
-          {trade_off_explanation && (
-            <div className="bg-slate-950/80 border border-amber-900/40 rounded-lg p-3">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-amber-400 font-mono mb-1.5 flex items-center gap-1.5">
-                <AlertTriangle className="h-3 w-3" />
-                Speed vs. Safety Trade-Off
-              </h4>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                {trade_off_explanation}
-              </p>
+      {/* Mireye Environmental Assessment */}
+      {mireye_insight && (
+        <div className="bg-zinc-950/80 border border-zinc-800 rounded-lg p-3 space-y-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-zinc-300">
+              <FileText className="h-3 w-3 text-sky-400" />
+              <span>Mireye Environmental Assessment</span>
             </div>
-          )}
+            <span className="text-[9px] font-mono text-zinc-500">Mireye API /v1/ask</span>
+          </div>
+          <p className="text-xs text-zinc-300 leading-relaxed font-sans">
+            "{mireye_insight}"
+          </p>
+        </div>
+      )}
 
-          {/* Mireye Environmental Assessment */}
-          {mireye_insight && (
-            <div className="bg-cyan-950/30 border border-cyan-800/40 rounded-lg p-3">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 font-mono mb-1.5 flex items-center gap-1.5">
-                <FileText className="h-3 w-3" />
-                Mireye Environmental Assessment
-              </h4>
-              <p className="text-xs text-cyan-100/80 leading-relaxed italic">
-                "{mireye_insight}"
-              </p>
-              <span className="text-[9px] text-cyan-500/60 font-mono mt-1 block">
-                Source: Mireye API (/v1/ask)
-              </span>
-            </div>
-          )}
+      {/* Route Classification Grid */}
+      <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-mono pt-1">
+        <div className="bg-zinc-950 border border-emerald-900/40 rounded-lg p-2">
+          <span className="text-[10px] text-emerald-400 font-bold block mb-0.5">PRIMARY</span>
+          <span className="text-zinc-200 font-semibold">
+            {primary_route_id ? primary_route_id.toUpperCase().replace('_', ' ') : '—'}
+          </span>
+        </div>
+        <div className="bg-zinc-950 border border-blue-900/40 rounded-lg p-2">
+          <span className="text-[10px] text-blue-400 font-bold block mb-0.5">BACKUP</span>
+          <span className="text-zinc-200 font-semibold">
+            {backup_route_id ? backup_route_id.toUpperCase().replace('_', ' ') : '—'}
+          </span>
+        </div>
+        <div className="bg-zinc-950 border border-rose-900/40 rounded-lg p-2">
+          <span className="text-[10px] text-rose-400 font-bold block mb-0.5">HIGH RISK</span>
+          <span className="text-zinc-200 font-semibold truncate block" title={rejected_route_ids.join(', ')}>
+            {rejected_route_ids.length > 0
+              ? rejected_route_ids.map(id => id.toUpperCase().replace('_', ' ')).join(', ')
+              : 'None'}
+          </span>
+        </div>
+      </div>
 
-          {/* Decision Steps Timeline */}
-          <div>
-            <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono mb-2">
-              Decision Trace
-            </h4>
-            <div className="space-y-0">
-              {steps.map((step, idx) => {
-                const IconComponent = STEP_ICONS[step.action] || Info;
-                const isLast = idx === steps.length - 1;
-                return (
-                  <div key={idx} className="flex gap-3">
-                    {/* Timeline line + dot */}
-                    <div className="flex flex-col items-center">
-                      <div className={`h-6 w-6 rounded-full flex items-center justify-center shrink-0 ${
-                        isLast ? 'bg-emerald-500/20 border border-emerald-500/40' : 'bg-slate-800 border border-slate-700'
-                      }`}>
-                        <IconComponent className={`h-3 w-3 ${isLast ? 'text-emerald-400' : 'text-slate-400'}`} />
-                      </div>
-                      {!isLast && (
-                        <div className="w-px h-full min-h-[16px] bg-slate-800" />
-                      )}
-                    </div>
-                    {/* Content */}
-                    <div className="pb-3 flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono font-bold text-slate-300 uppercase">
-                          Step {step.step_number}
-                        </span>
-                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                          isLast ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60' : 'bg-slate-800 text-slate-300'
-                        }`}>
-                          {step.action}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
-                        {step.detail}
-                      </p>
-                    </div>
+      {/* Collapsible Technical Decision Trace */}
+      {steps.length > 0 && (
+        <div className="border-t border-zinc-800/80 pt-2">
+          <button
+            onClick={() => setExpandedTrace(!expandedTrace)}
+            className="w-full flex items-center justify-between text-[11px] font-mono text-zinc-400 hover:text-zinc-200 py-1 transition-colors cursor-pointer"
+          >
+            <span>Evaluation Trace ({steps.length} steps)</span>
+            {expandedTrace ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+
+          {expandedTrace && (
+            <div className="mt-2 space-y-1.5 bg-zinc-950/60 p-2.5 rounded-lg border border-zinc-850 font-mono text-[11px]">
+              {steps.map((step, idx) => (
+                <div key={idx} className="flex items-start gap-2 text-zinc-400">
+                  <span className="text-zinc-500 shrink-0">[{step.step_number}]</span>
+                  <div>
+                    <span className="text-zinc-300 font-semibold mr-1.5">{step.action}:</span>
+                    <span className="text-zinc-400">{step.detail}</span>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
-          </div>
-
-          {/* Route Assignment Summary */}
-          <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-mono">
-            <div className="bg-emerald-950/50 border border-emerald-800/40 rounded-lg p-2">
-              <span className="text-emerald-400 font-bold block">PRIMARY</span>
-              <span className="text-slate-200 font-bold text-xs">
-                {primary_route_id ? primary_route_id.toUpperCase().replace('_', ' ') : '—'}
-              </span>
-            </div>
-            <div className="bg-blue-950/50 border border-blue-800/40 rounded-lg p-2">
-              <span className="text-blue-400 font-bold block">BACKUP</span>
-              <span className="text-slate-200 font-bold text-xs">
-                {backup_route_id ? backup_route_id.toUpperCase().replace('_', ' ') : '—'}
-              </span>
-            </div>
-            <div className="bg-rose-950/50 border border-rose-800/40 rounded-lg p-2">
-              <span className="text-rose-400 font-bold block">REJECTED</span>
-              <span className="text-slate-200 font-bold text-xs">
-                {rejected_route_ids.length > 0
-                  ? rejected_route_ids.map(id => id.toUpperCase().replace('_', ' ')).join(', ')
-                  : '—'}
-              </span>
-            </div>
-          </div>
+          )}
         </div>
       )}
     </div>

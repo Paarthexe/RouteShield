@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MapPin, Navigation, Search, Loader2, Sparkles, Plus, Minus, GripVertical } from 'lucide-react';
+import { MapPin, Navigation, Search, Loader2, Plus, Minus, GripVertical, SlidersHorizontal } from 'lucide-react';
 
 export default function LocationInput({
   origin,
@@ -66,62 +66,56 @@ export default function LocationInput({
   const destLetter = String.fromCharCode(66 + waypoints.length);
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xs font-bold tracking-wider text-slate-400 uppercase font-mono flex items-center gap-2">
-          <Navigation className="h-4 w-4 text-cyan-400" />
-          Evacuation Corridor Parameters
+    <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-4 shadow-xl space-y-4">
+      <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
+        <h2 className="text-xs font-semibold tracking-wider text-zinc-300 uppercase font-mono flex items-center gap-2">
+          <Navigation className="h-3.5 w-3.5 text-sky-400" />
+          Corridor Route Planner
         </h2>
+        <button
+          type="button"
+          onClick={handleAddWaypoint}
+          title="Add intermediate waypoint"
+          className="text-[11px] font-mono text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 px-2 py-0.5 rounded transition-colors flex items-center gap-1 cursor-pointer"
+        >
+          <Plus className="h-3 w-3" />
+          <span>Add Stop</span>
+        </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Incident Location (A) */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-emerald-500 text-white font-mono text-[10px] flex items-center justify-center font-bold">A</span>
-              <span>INCIDENT LOCATION (ORIGIN)</span>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Origin Location (A) */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-[11px]">
+            <label className="font-mono font-semibold text-zinc-300 flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded bg-emerald-600 text-white text-[10px] flex items-center justify-center font-bold">A</span>
+              <span className="text-zinc-400">ORIGIN</span>
             </label>
-            <div className="flex items-center space-x-1.5">
-              <button
-                type="button"
-                onClick={() => setPickerMode(pickerMode === 'origin' ? null : 'origin')}
-                className={`text-[11px] font-semibold px-2 py-0.5 rounded border flex items-center space-x-1 transition-all cursor-pointer ${
-                  pickerMode === 'origin'
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 animate-pulse'
-                    : 'bg-slate-800 border-slate-700 text-emerald-400 hover:text-emerald-300 hover:bg-slate-750'
-                }`}
-              >
-                <MapPin className="h-3 w-3" />
-                <span>{pickerMode === 'origin' ? 'Click Map Point...' : 'Pick on map'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleAddWaypoint}
-                title="Add intermediate stop"
-                className="p-1 text-amber-400 hover:text-amber-300 bg-slate-800 border border-slate-700 rounded hover:border-amber-500/50 transition-colors cursor-pointer flex items-center space-x-1 text-[11px] font-semibold px-2"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Stop</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setPickerMode(pickerMode === 'origin' ? null : 'origin')}
+              className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-all cursor-pointer ${
+                pickerMode === 'origin'
+                  ? 'bg-emerald-950 border-emerald-500 text-emerald-300'
+                  : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-750'
+              }`}
+            >
+              {pickerMode === 'origin' ? 'Click map to set' : 'Pick on map'}
+            </button>
           </div>
           <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-emerald-400">
-              <MapPin className="h-4 w-4" />
-            </div>
             <input
               type="text"
               value={origin}
               onChange={(e) => setOrigin(e.target.value)}
-              placeholder="e.g. Asheville, NC or click 'Pick on map'"
-              className="w-full pl-9 pr-3 py-2.5 bg-slate-950 border border-slate-700/80 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all font-sans"
+              placeholder="e.g. Asheville, NC or click map"
+              className="w-full px-3 py-2 bg-zinc-950 border border-zinc-750 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-sky-500 font-mono transition-colors"
               required
             />
           </div>
         </div>
 
-        {/* Intermediate Waypoints / Stops (B, C, D...) */}
+        {/* Waypoints (B, C, D...) */}
         {waypoints.map((wp, idx) => {
           const stopLetter = String.fromCharCode(66 + idx);
           return (
@@ -131,103 +125,92 @@ export default function LocationInput({
               onDragStart={(e) => handleDragStart(e, idx)}
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, idx)}
-              className={`space-y-1.5 transition-all rounded-lg p-1 ${
+              className={`space-y-1 transition-all rounded-lg ${
                 draggedIndex === idx ? 'opacity-40 border border-dashed border-amber-500' : ''
               }`}
             >
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                  <GripVertical className="h-3.5 w-3.5 text-slate-500 cursor-grab hover:text-slate-300 transition-colors" />
-                  <span className="w-4 h-4 rounded-full bg-amber-500 text-white font-mono text-[10px] flex items-center justify-center font-bold">{stopLetter}</span>
-                  <span>INTERMEDIATE STOP {idx + 1}</span>
+              <div className="flex items-center justify-between text-[11px]">
+                <label className="font-mono font-semibold text-zinc-300 flex items-center gap-1.5">
+                  <GripVertical className="h-3 w-3 text-zinc-500 cursor-grab" />
+                  <span className="w-4 h-4 rounded bg-amber-600 text-white text-[10px] flex items-center justify-center font-bold">{stopLetter}</span>
+                  <span className="text-zinc-400">WAYPOINT {idx + 1}</span>
                 </label>
                 <div className="flex items-center space-x-1.5">
                   <button
                     type="button"
                     onClick={() => setPickerMode(pickerMode === `waypoint_${idx}` ? null : `waypoint_${idx}`)}
-                    className={`text-[11px] font-semibold px-2 py-0.5 rounded border flex items-center space-x-1 transition-all cursor-pointer ${
+                    className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-all cursor-pointer ${
                       pickerMode === `waypoint_${idx}`
-                        ? 'bg-amber-500/20 border-amber-500 text-amber-300 animate-pulse'
-                        : 'bg-slate-800 border-slate-700 text-amber-400 hover:text-amber-300'
+                        ? 'bg-amber-950 border-amber-500 text-amber-300'
+                        : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
-                    <MapPin className="h-3 w-3" />
-                    <span>{pickerMode === `waypoint_${idx}` ? 'Click Map Point...' : 'Pick on map'}</span>
+                    {pickerMode === `waypoint_${idx}` ? 'Click map to set' : 'Pick on map'}
                   </button>
                   <button
                     type="button"
                     onClick={() => handleRemoveWaypoint(idx)}
                     title="Remove stop"
-                    className="p-1 text-slate-400 hover:text-rose-400 bg-slate-800 border border-slate-700 rounded hover:border-rose-500/50 transition-colors cursor-pointer"
+                    className="p-1 text-zinc-400 hover:text-rose-400 bg-zinc-800 border border-zinc-700 rounded transition-colors cursor-pointer"
                   >
-                    <Minus className="h-3.5 w-3.5" />
+                    <Minus className="h-3 w-3" />
                   </button>
                 </div>
               </div>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-amber-400">
-                  <MapPin className="h-4 w-4" />
-                </div>
-                <input
-                  type="text"
-                  value={wp}
-                  onChange={(e) => handleUpdateWaypoint(idx, e.target.value)}
-                  placeholder={`Stop (${stopLetter}) location or click 'Pick on map'`}
-                  className="w-full pl-9 pr-3 py-2.5 bg-slate-950 border border-slate-700/80 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all font-sans"
-                />
-              </div>
+              <input
+                type="text"
+                value={wp}
+                onChange={(e) => handleUpdateWaypoint(idx, e.target.value)}
+                placeholder={`Waypoint (${stopLetter}) location`}
+                className="w-full px-3 py-2 bg-zinc-950 border border-zinc-750 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-sky-500 font-mono transition-colors"
+              />
             </div>
           );
         })}
 
-        {/* Destination Location (E/D/C) */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-rose-500 text-white font-mono text-[10px] flex items-center justify-center font-bold">{destLetter}</span>
-              <span>EVACUATION DESTINATION</span>
+        {/* Destination Location */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-[11px]">
+            <label className="font-mono font-semibold text-zinc-300 flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded bg-rose-600 text-white text-[10px] flex items-center justify-center font-bold">{destLetter}</span>
+              <span className="text-zinc-400">DESTINATION</span>
             </label>
             <button
               type="button"
               onClick={() => setPickerMode(pickerMode === 'destination' ? null : 'destination')}
-              className={`text-[11px] font-semibold px-2 py-0.5 rounded border flex items-center space-x-1 transition-all cursor-pointer ${
+              className={`text-[11px] font-mono px-2 py-0.5 rounded border transition-all cursor-pointer ${
                 pickerMode === 'destination'
-                  ? 'bg-rose-500/20 border-rose-500 text-rose-300 animate-pulse'
-                  : 'bg-slate-800 border-slate-700 text-rose-400 hover:text-rose-300 hover:bg-slate-750'
+                  ? 'bg-rose-950 border-rose-500 text-rose-300'
+                  : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-750'
               }`}
             >
-              <MapPin className="h-3 w-3" />
-              <span>{pickerMode === 'destination' ? 'Click Map Point...' : 'Pick on map'}</span>
+              {pickerMode === 'destination' ? 'Click map to set' : 'Pick on map'}
             </button>
           </div>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-rose-400">
-              <MapPin className="h-4 w-4" />
-            </div>
-            <input
-              type="text"
-              value={destination}
-              onChange={(e) => setDestination(e.target.value)}
-              placeholder="e.g. Charlotte, NC or click 'Pick on map'"
-              className="w-full pl-9 pr-3 py-2.5 bg-slate-950 border border-slate-700/80 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all font-sans"
-              required
-            />
-          </div>
+          <input
+            type="text"
+            value={destination}
+            onChange={(e) => setDestination(e.target.value)}
+            placeholder="e.g. Charlotte, NC or click map"
+            className="w-full px-3 py-2 bg-zinc-950 border border-zinc-750 rounded-lg text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-sky-500 font-mono transition-colors"
+            required
+          />
         </div>
 
         {/* Sampling Interval Selector */}
-        <div className="flex items-center justify-between pt-1">
-          <label className="text-xs font-medium text-slate-400">
-            Physical Sampling Interval:
-          </label>
+        <div className="flex items-center justify-between pt-1 border-t border-zinc-800/80">
+          <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-mono">
+            <SlidersHorizontal className="h-3 w-3 text-zinc-500" />
+            <span>Sample Density</span>
+          </div>
           <select
             value={sampleInterval}
             onChange={(e) => setSampleInterval(Number(e.target.value))}
-            className="bg-slate-950 border border-slate-700 rounded-md text-xs text-cyan-300 px-2.5 py-1 font-mono focus:outline-none focus:border-cyan-500"
+            className="bg-zinc-950 border border-zinc-750 rounded px-2 py-1 text-[11px] font-mono text-zinc-200 focus:outline-none focus:border-sky-500"
           >
-            <option value={250}>250 m (Dense)</option>
-            <option value={500}>500 m (Standard)</option>
-            <option value={1000}>1000 m (Sparse)</option>
+            <option value={250}>250m (High resolution)</option>
+            <option value={500}>500m (Standard)</option>
+            <option value={1000}>1000m (Sparse)</option>
           </select>
         </div>
 
@@ -235,17 +218,17 @@ export default function LocationInput({
         <button
           type="submit"
           disabled={loading || !origin.trim() || !destination.trim()}
-          className="w-full py-3 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-white font-bold text-xs uppercase tracking-wider rounded-lg shadow-lg shadow-cyan-600/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
+          className="w-full py-2.5 px-4 bg-zinc-100 hover:bg-white text-zinc-900 disabled:bg-zinc-800 disabled:text-zinc-500 font-mono font-bold text-xs uppercase tracking-wider rounded-lg shadow-sm flex items-center justify-center space-x-2 transition-all cursor-pointer"
         >
           {loading ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin text-cyan-200" />
-              <span>Generating Candidate Corridors...</span>
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-900" />
+              <span>Analyzing Corridors...</span>
             </>
           ) : (
             <>
-              <Search className="h-4 w-4" />
-              <span>ANALYZE ROUTES</span>
+              <Search className="h-3.5 w-3.5" />
+              <span>Evaluate Corridors</span>
             </>
           )}
         </button>

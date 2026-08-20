@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
-import { Mountain, MapPin } from 'lucide-react';
+import { Mountain } from 'lucide-react';
 
 const CHART_WIDTH = 800;
-const CHART_HEIGHT = 160;
-const PADDING = { top: 20, right: 20, bottom: 30, left: 50 };
+const CHART_HEIGHT = 150;
+const PADDING = { top: 18, right: 20, bottom: 26, left: 45 };
 
 export default function ElevationProfile({ route }) {
   if (!route || !route.samples || route.samples.length < 2) return null;
@@ -42,7 +42,6 @@ export default function ElevationProfile({ route }) {
 
     if (points.length < 2) return null;
 
-    // Add padding to elevation range
     const elevRange = maxElev - minElev || 1;
     minElev = minElev - elevRange * 0.1;
     maxElev = maxElev + elevRange * 0.1;
@@ -60,56 +59,53 @@ export default function ElevationProfile({ route }) {
   const xScale = (dist) => PADDING.left + (dist / (maxDist || 1)) * innerW;
   const yScale = (elev) => PADDING.top + innerH - ((elev - minElev) / ((maxElev - minElev) || 1)) * innerH;
 
-  // Build area path
   const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xScale(p.dist).toFixed(1)},${yScale(p.elev).toFixed(1)}`).join(' ');
   const areaPath = linePath +
     ` L${xScale(points[points.length - 1].dist).toFixed(1)},${(PADDING.top + innerH).toFixed(1)}` +
     ` L${xScale(points[0].dist).toFixed(1)},${(PADDING.top + innerH).toFixed(1)} Z`;
 
-  // Y-axis ticks
   const yTicks = [];
-  const elevStep = (maxElev - minElev) / 4;
-  for (let i = 0; i <= 4; i++) {
+  const elevStep = (maxElev - minElev) / 3;
+  for (let i = 0; i <= 3; i++) {
     const val = minElev + elevStep * i;
     yTicks.push({ val, y: yScale(val) });
   }
 
-  // X-axis ticks
   const xTicks = [];
-  const distStep = maxDist / 5;
-  for (let i = 0; i <= 5; i++) {
+  const distStep = maxDist / 4;
+  for (let i = 0; i <= 4; i++) {
     const val = distStep * i;
     xTicks.push({ val, x: xScale(val) });
   }
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 font-mono flex items-center gap-1.5">
-          <Mountain className="h-4 w-4 text-cyan-400" />
-          Elevation Profile — {route.route_id.toUpperCase().replace('_', ' ')}
+    <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-3.5 shadow-xl">
+      <div className="flex items-center justify-between mb-2 border-b border-zinc-800/80 pb-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-300 font-mono flex items-center gap-1.5">
+          <Mountain className="h-3.5 w-3.5 text-zinc-400" />
+          Terrain Elevation Cross-Section ({route.route_id.toUpperCase().replace('_', ' ')})
         </h3>
-        <div className="flex items-center gap-3 text-[10px] font-mono">
+        <div className="flex items-center gap-3 text-[10px] font-mono text-zinc-400">
           <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-cyan-400"></span>
-            <span className="text-slate-400">Elevation</span>
+            <span className="h-1.5 w-3 bg-sky-400 rounded-full"></span>
+            <span>Elevation Profile</span>
           </span>
           {bridges.length > 0 && (
             <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-sm bg-amber-400"></span>
-              <span className="text-slate-400">Bridge</span>
+              <span className="h-2 w-2 rounded bg-amber-500"></span>
+              <span>NBI Bridge</span>
             </span>
           )}
           {steepZones.length > 0 && (
             <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-sm bg-rose-400"></span>
-              <span className="text-slate-400">Steep Grade</span>
+              <span className="h-2 w-2 rounded bg-rose-500"></span>
+              <span>Grade &gt; 8%</span>
             </span>
           )}
           {probed.length > 0 && (
             <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 ring-1 ring-emerald-300"></span>
-              <span className="text-slate-400">Mireye Probed</span>
+              <span className="h-2 w-2 rounded-full border border-emerald-400 bg-emerald-950"></span>
+              <span>Mireye Point</span>
             </span>
           )}
         </div>
@@ -118,41 +114,40 @@ export default function ElevationProfile({ route }) {
       <svg width="100%" viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} className="overflow-visible">
         <defs>
           <linearGradient id="elevGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.01" />
           </linearGradient>
         </defs>
 
         {/* Grid lines */}
         {yTicks.map((t, i) => (
           <g key={`y-${i}`}>
-            <line x1={PADDING.left} y1={t.y} x2={CHART_WIDTH - PADDING.right} y2={t.y} stroke="#1e293b" strokeWidth="1" />
-            <text x={PADDING.left - 8} y={t.y + 3} textAnchor="end" className="fill-slate-500" fontSize="9" fontFamily="monospace">
+            <line x1={PADDING.left} y1={t.y} x2={CHART_WIDTH - PADDING.right} y2={t.y} stroke="#27272a" strokeWidth="1" strokeDasharray="2,2" />
+            <text x={PADDING.left - 6} y={t.y + 3} textAnchor="end" className="fill-zinc-500" fontSize="9" fontFamily="monospace">
               {t.val.toFixed(0)}m
             </text>
           </g>
         ))}
         {xTicks.map((t, i) => (
           <g key={`x-${i}`}>
-            <line x1={t.x} y1={PADDING.top} x2={t.x} y2={PADDING.top + innerH} stroke="#1e293b" strokeWidth="1" />
-            <text x={t.x} y={PADDING.top + innerH + 16} textAnchor="middle" className="fill-slate-500" fontSize="9" fontFamily="monospace">
+            <line x1={t.x} y1={PADDING.top} x2={t.x} y2={PADDING.top + innerH} stroke="#27272a" strokeWidth="1" strokeDasharray="2,2" />
+            <text x={t.x} y={PADDING.top + innerH + 14} textAnchor="middle" className="fill-zinc-500" fontSize="9" fontFamily="monospace">
               {t.val.toFixed(1)}km
             </text>
           </g>
         ))}
 
-        {/* Steep grade highlight zones */}
+        {/* Steep grade zones */}
         {steepZones.map((sz, i) => (
           <circle
             key={`steep-${i}`}
             cx={xScale(sz.dist)}
             cy={yScale(sz.elev)}
-            r={6}
-            fill="#ef4444"
-            fillOpacity={0.2}
-            stroke="#ef4444"
+            r={5}
+            fill="#f43f5e"
+            fillOpacity={0.25}
+            stroke="#f43f5e"
             strokeWidth={1}
-            strokeOpacity={0.5}
           />
         ))}
 
@@ -160,20 +155,20 @@ export default function ElevationProfile({ route }) {
         <path d={areaPath} fill="url(#elevGrad)" />
 
         {/* Elevation line */}
-        <path d={linePath} fill="none" stroke="#06b6d4" strokeWidth="2" strokeLinejoin="round" />
+        <path d={linePath} fill="none" stroke="#38bdf8" strokeWidth="1.75" strokeLinejoin="round" />
 
         {/* Bridge markers */}
         {bridges.map((b, i) => (
           <g key={`bridge-${i}`}>
             <line
-              x1={xScale(b.dist)} y1={yScale(b.elev) - 4}
+              x1={xScale(b.dist)} y1={yScale(b.elev) - 3}
               x2={xScale(b.dist)} y2={PADDING.top + innerH}
-              stroke="#f59e0b" strokeWidth="1" strokeDasharray="3,3" strokeOpacity="0.5"
+              stroke="#f59e0b" strokeWidth="1" strokeDasharray="2,2" strokeOpacity="0.4"
             />
             <rect
-              x={xScale(b.dist) - 4} y={yScale(b.elev) - 8}
-              width="8" height="8" rx="1"
-              fill="#f59e0b" fillOpacity="0.8"
+              x={xScale(b.dist) - 3} y={yScale(b.elev) - 6}
+              width="6" height="6" rx="1"
+              fill="#f59e0b"
             />
           </g>
         ))}
@@ -183,12 +178,8 @@ export default function ElevationProfile({ route }) {
           <g key={`probed-${i}`}>
             <circle
               cx={xScale(p.dist)} cy={yScale(p.elev)}
-              r={5} fill="#10b981" fillOpacity={0.3}
-              stroke="#10b981" strokeWidth={2}
-            />
-            <circle
-              cx={xScale(p.dist)} cy={yScale(p.elev)}
-              r={2.5} fill="#10b981"
+              r={3.5} fill="#10b981"
+              stroke="#042f2e" strokeWidth={1}
             />
           </g>
         ))}
