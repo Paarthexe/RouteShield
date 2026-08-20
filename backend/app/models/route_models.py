@@ -28,6 +28,8 @@ class RouteSample(BaseModel):
     nbi_bridges: Optional[List[Dict[str, Any]]] = None
     mireye_data: Optional[Dict[str, Any]] = None
     hazards: Optional[List[Dict[str, Any]]] = None
+    realtime_hazards: Optional[List[Dict[str, Any]]] = None
+    traffic_flow: Optional[Dict[str, Any]] = None
     slope_pct: Optional[float] = None
     hazard_score: Optional[float] = None
     is_mireye_probed: bool = False
@@ -82,6 +84,7 @@ class Route(BaseModel):
     tag: Optional[str] = None
     samples: List[RouteSample] = []
     infrastructure_summary: Optional[Dict[str, Any]] = None
+    active_realtime_alerts: List[Dict[str, Any]] = []
     viability_score: Optional[float] = None
     viability: Optional[RouteViability] = None
     bottlenecks: List[BottleneckInfo] = []

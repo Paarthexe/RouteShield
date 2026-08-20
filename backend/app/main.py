@@ -18,6 +18,12 @@ async def lifespan(app: FastAPI):
         logging.info(f"Mireye API Key configured: {masked_key}")
     else:
         logging.warning("Mireye API Key not detected in environment. Please configure MIREYE_API_KEY.")
+    
+    if settings.TOMTOM_API_KEY:
+        masked_tt = settings.TOMTOM_API_KEY[:8] + "..." if len(settings.TOMTOM_API_KEY) > 8 else "***"
+        logging.info(f"TomTom Traffic API Key configured: {masked_tt}")
+    else:
+        logging.info("TomTom API Key not configured. Using open traffic flow estimation.")
     yield
 
 app = FastAPI(title="RouteShield", version="0.1.0", lifespan=lifespan)

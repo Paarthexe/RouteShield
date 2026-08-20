@@ -7,11 +7,11 @@ logger = logging.getLogger(__name__)
 # Weights for viability score formula
 W_HAZARD_EXPOSURE = 40.0
 W_BOTTLENECK_PENALTY = 25.0
-W_TIME_DELTA = 10.0
+W_TIME_DELTA = 35.0
 
 # Rejection thresholds
 REJECT_BSI_THRESHOLD = 3.5          # Catastrophic bottleneck threshold
-REJECT_HAZARD_EXPOSURE_PCT = 0.50   # > 50% of samples with hazard_score > 0.5 = auto-reject
+REJECT_HAZARD_EXPOSURE_PCT = 0.45   # > 45% of samples with hazard_score > 0.5 = auto-reject
 
 
 def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViability:
@@ -22,8 +22,8 @@ def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViab
     bottlenecks = route.bottlenecks
     total_samples = len(samples) if samples else 1
 
-    # --- Hazard Exposure Percentage ---
-    hazardous_count = sum(1 for s in samples if (s.hazard_score or 0) > 0.3)
+    # --- Hazard Exposure Percentage & Intensity ---
+    hazardous_count = sum(1 for s in samples if (s.hazard_score or 0) > 0.15)
     hazard_exposure_pct = round(hazardous_count / total_samples, 3)
 
     # --- Bottleneck Metrics ---
@@ -38,12 +38,20 @@ def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViab
         bsi_sum = sum(b.bsi_score for b in bottlenecks)
         bottleneck_penalty = min(1.0, bsi_sum / (total_samples * 0.4))
 
-    # --- Time Delta Penalty (0-1) ---
-    time_delta_s = route.duration_s - fastest_duration_s
-    if time_delta_s <= 0:
+    # --- Non-Linear Time Delta Penalty (0-1) ---
+    # Excessively long detours (> 2x travel time) receive heavy penalty
+    if fastest_duration_s <= 0 or route.duration_s <= fastest_duration_s:
+        time_ratio = 1.0
         time_delta_penalty = 0.0
     else:
-        time_delta_penalty = min(1.0, time_delta_s / 1800.0)
+        time_ratio = route.duration_s / fastest_duration_s
+        # Quadratic scaling for detours > 1.5x
+        if time_ratio <= 1.2:
+            time_delta_penalty = (time_ratio - 1.0) / 0.5  # 0 to 0.4
+        elif time_ratio <= 2.0:
+            time_delta_penalty = 0.4 + (time_ratio - 1.2) * 0.5  # 0.4 to 0.8
+        else:
+            time_delta_penalty = min(1.0, 0.8 + (time_ratio - 2.0) * 0.2)  # up to 1.0
 
     # --- Viability Score ---
     score = 100.0 - (
@@ -67,6 +75,10 @@ def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViab
         rejection_reasons.append(
             f"Excessive hazard exposure ({high_hazard_pct:.0%} of corridor above threshold)"
         )
+
+    # Check for active road closures
+    if any(s.traffic_flow and s.traffic_flow.get("road_closed") for s in samples):
+        rejection_reasons.append("Active road closure reported along corridor")
 
     status = "REJECTED" if rejection_reasons else "CANDIDATE"
 

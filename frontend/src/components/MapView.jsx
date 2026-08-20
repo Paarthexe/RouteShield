@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { MapPin, Navigation, Compass, CheckCircle2 } from 'lucide-react';
 
@@ -295,6 +295,46 @@ export default function MapView({
           const positions = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
           const strokeColor = ROUTE_LINE_COLORS[route.route_id] || '#06b6d4';
 
+          // Build Google Maps style traffic color sub-segments if selected & traffic data exists
+          const hasTraffic = isSelected && route.samples && route.samples.some(s => s.traffic_flow);
+          const trafficSegments = [];
+
+          if (hasTraffic && route.samples.length > 1) {
+            for (let i = 0; i < route.samples.length - 1; i++) {
+              const s1 = route.samples[i];
+              const s2 = route.samples[i + 1];
+              const tf = s1.traffic_flow;
+
+              let segColor = strokeColor;
+              let condStr = "Traffic Flow Normal";
+              let speedStr = "";
+
+              if (tf) {
+                if (tf.road_closed) {
+                  segColor = '#991b1b'; // Dark Crimson (Closed)
+                  condStr = "Road Closed";
+                } else if (tf.congestion_condition.includes('Heavy')) {
+                  segColor = '#ef4444'; // Red (Heavy)
+                  condStr = "Heavy Congestion";
+                } else if (tf.congestion_condition.includes('Moderate')) {
+                  segColor = '#f59e0b'; // Amber (Moderate)
+                  condStr = "Moderate Traffic";
+                } else if (tf.congestion_condition.includes('Free')) {
+                  segColor = '#10b981'; // Green (Free Flow)
+                  condStr = "Free Flow";
+                }
+                speedStr = `${tf.current_speed_kmh} km/h`;
+              }
+
+              trafficSegments.push({
+                coords: [[s1.latitude, s1.longitude], [s2.latitude, s2.longitude]],
+                color: segColor,
+                condition: condStr,
+                speed: speedStr
+              });
+            }
+          }
+
           return (
             <React.Fragment key={route.route_id}>
               {/* Outer Glow for Selected Route */}
@@ -304,39 +344,74 @@ export default function MapView({
                   pathOptions={{
                     color: strokeColor,
                     weight: 10,
-                    opacity: 0.35,
+                    opacity: 0.25,
                     lineCap: 'round',
                     lineJoin: 'round'
                   }}
                 />
               )}
 
-              {/* Main Line */}
-              <Polyline
-                positions={positions}
-                eventHandlers={{
-                  click: () => onSelectRoute(route.route_id)
-                }}
-                pathOptions={{
-                  color: strokeColor,
-                  weight: isSelected ? 6 : 4,
-                  opacity: isSelected ? 1.0 : 0.45,
-                  dashArray: isSelected ? null : '6, 8',
-                  lineCap: 'round',
-                  lineJoin: 'round'
-                }}
-              />
+              {/* Selected Route with Google Maps Multi-Color Traffic Segments */}
+              {isSelected && hasTraffic && trafficSegments.length > 0 ? (
+                trafficSegments.map((seg, sIdx) => (
+                  <Polyline
+                    key={`seg-${route.route_id}-${sIdx}`}
+                    positions={seg.coords}
+                    eventHandlers={{
+                      click: () => onSelectRoute(route.route_id)
+                    }}
+                    pathOptions={{
+                      color: seg.color,
+                      weight: 6,
+                      opacity: 1.0,
+                      lineCap: 'round',
+                      lineJoin: 'round'
+                    }}
+                  >
+                    <Tooltip sticky className="custom-traffic-tooltip" direction="top" offset={[0, -4]}>
+                      <div className="font-mono text-[10px] text-zinc-100 flex items-center gap-1.5 leading-none">
+                        <span className={`font-bold ${
+                          seg.color === '#10b981' ? 'text-emerald-400' :
+                          seg.color === '#f59e0b' ? 'text-amber-400' :
+                          seg.color === '#ef4444' ? 'text-rose-400' : 'text-rose-500'
+                        }`}>
+                          ● {seg.condition}
+                        </span>
+                        {seg.speed && <span className="text-zinc-400 font-normal">({seg.speed})</span>}
+                      </div>
+                    </Tooltip>
+                  </Polyline>
+                ))
+              ) : (
+                /* Unselected Route OR Selected Route without Traffic data */
+                <Polyline
+                  positions={positions}
+                  eventHandlers={{
+                    click: () => onSelectRoute(route.route_id)
+                  }}
+                  pathOptions={{
+                    color: strokeColor,
+                    weight: isSelected ? 6 : 4,
+                    opacity: isSelected ? 1.0 : 0.40,
+                    dashArray: isSelected ? null : '6, 8',
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                  }}
+                />
+              )}
             </React.Fragment>
           );
         })}
 
-        {/* Render Physical Distance Samples */}
+        {/* Render Mireye Natural Hazard Probe Samples Only (Hides non-Mireye speed dots) */}
         {showSamples && selectedRouteObj && selectedRouteObj.samples && (
-          selectedRouteObj.samples.map(sample => {
-            const isSampleSelected = selectedSample && selectedSample.sample_id === sample.sample_id;
-            const isMireyeProbed = sample.is_mireye_probed;
-            const hazardScore = sample.hazard_score || 0;
-            const distKm = (sample.distance_from_origin_m / 1000.0).toFixed(2);
+          selectedRouteObj.samples
+            .filter(sample => sample.is_mireye_probed || (selectedSample && selectedSample.sample_id === sample.sample_id))
+            .map(sample => {
+              const isSampleSelected = selectedSample && selectedSample.sample_id === sample.sample_id;
+              const isMireyeProbed = sample.is_mireye_probed;
+              const hazardScore = sample.hazard_score || 0;
+              const distKm = (sample.distance_from_origin_m / 1000.0).toFixed(2);
 
             // Color by hazard score
             let fillColor = '#06b6d4'; // Default cyan
@@ -382,6 +457,11 @@ export default function MapView({
                     {sample.slope_pct != null && (
                       <div className="text-[10px] text-slate-400 font-mono">
                         Slope: <span className={Math.abs(sample.slope_pct) > 8 ? 'text-rose-400 font-bold' : 'text-slate-300'}>{sample.slope_pct.toFixed(1)}%</span>
+                      </div>
+                    )}
+                    {sample.traffic_flow && (
+                      <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1 mt-1 border-t border-slate-800 pt-1">
+                        <span>Speed: {sample.traffic_flow.current_speed_kmh} km/h ({sample.traffic_flow.congestion_condition})</span>
                       </div>
                     )}
                   </div>

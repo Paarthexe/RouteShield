@@ -69,6 +69,78 @@ export default function SampleInspector({ sample, onClose }) {
         </div>
       </div>
 
+      {/* Real-time NWS / DOT Emergency Hazards Section */}
+      {sample.realtime_hazards && sample.realtime_hazards.length > 0 && (
+        <div className="bg-rose-950/40 border border-rose-800/80 p-3 rounded-lg text-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <h5 className="text-[11px] font-bold text-rose-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 text-rose-400 animate-pulse" /> Active Emergency Hazards ({sample.realtime_hazards.length})
+            </h5>
+            <span className="text-[9px] bg-rose-900 text-rose-200 border border-rose-700 px-1.5 py-0.5 rounded font-mono">
+              Live NWS Feed
+            </span>
+          </div>
+
+          <div className="space-y-1.5 font-mono">
+            {sample.realtime_hazards.map((hz, i) => (
+              <div key={i} className="bg-slate-950/90 p-2.5 rounded border border-rose-900/60 text-[11px]">
+                <div className="flex items-center justify-between text-rose-300 font-bold mb-1">
+                  <span>{hz.event}</span>
+                  <span className="text-[9px] px-1.5 py-0.2 bg-rose-950 border border-rose-800 rounded uppercase">
+                    {hz.severity}
+                  </span>
+                </div>
+                <p className="text-slate-300 text-[11px] font-sans font-medium mb-1">
+                  {hz.headline || hz.description}
+                </p>
+                {hz.instruction && (
+                  <p className="text-[10px] text-amber-300 font-sans italic bg-amber-950/30 p-1.5 rounded border border-amber-800/40 mt-1">
+                    "{hz.instruction}"
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TomTom Live Traffic Flow Section */}
+      {sample.traffic_flow && (
+        <div className="bg-slate-950 border border-amber-900/50 p-3 rounded-lg text-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <h5 className="text-[11px] font-bold text-amber-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
+              <Zap className="h-3.5 w-3.5 text-amber-400 animate-pulse" /> Live Vehicle Traffic Flow
+            </h5>
+            <span className="text-[9px] bg-amber-950 text-amber-300 border border-amber-800 px-1.5 py-0.5 rounded font-mono">
+              TomTom Flow API
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+            <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+              <span className="text-[9px] text-slate-400 block uppercase">Current Speed</span>
+              <span className="text-xs font-bold text-slate-100">{sample.traffic_flow.current_speed_kmh} km/h</span>
+              <span className="text-[9px] text-slate-500 block truncate">
+                Free Flow: {sample.traffic_flow.free_flow_speed_kmh} km/h
+              </span>
+            </div>
+
+            <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+              <span className="text-[9px] text-slate-400 block uppercase">Congestion</span>
+              <span className={`text-xs font-bold ${
+                sample.traffic_flow.congestion_condition.includes('Heavy') || sample.traffic_flow.congestion_condition.includes('Closed') ? 'text-rose-400' :
+                sample.traffic_flow.congestion_condition.includes('Moderate') ? 'text-amber-300' : 'text-emerald-400'
+              }`}>
+                {sample.traffic_flow.congestion_condition}
+              </span>
+              <span className="text-[9px] text-slate-500 block">
+                Speed Ratio: {(sample.traffic_flow.speed_ratio * 100).toFixed(0)}%
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Slope & Hazard Score Row */}
       {(slopePct != null || hazardScore != null) && (
         <div className="grid grid-cols-2 gap-2">

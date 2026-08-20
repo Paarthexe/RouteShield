@@ -6,9 +6,10 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     
-    # External Geocoding Credentials
+    # External API Credentials
     MIREYE_API_KEY: str = ""
     MIREYE_BASE_URL: str = "https://api.mireye.com/v1"
+    TOMTOM_API_KEY: str = ""
     
     # OSRM Routing Engine URL
     OSRM_BASE_URL: str = "http://router.project-osrm.org"

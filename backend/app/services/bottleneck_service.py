@@ -79,51 +79,52 @@ def _hazard_risk(sample: RouteSample) -> float:
     """
     Compute hazard risk score for a sample [0.0 - 1.0].
     Based on seismic PGA, steep slope, low elevation, and Mireye raw fields.
+    Scaled for higher sensitivity to physical environmental hazards.
     """
     risk = 0.0
     mireye = sample.mireye_data or {}
 
-    # Seismic PGA contribution (0-0.4)
+    # Seismic PGA contribution (0 - 0.50)
     pga = mireye.get("seismic_pga_g")
     if pga is not None:
-        if pga >= 0.6:
-            risk += 0.4
-        elif pga >= 0.4:
-            risk += 0.3
-        elif pga >= 0.2:
-            risk += 0.15
-        elif pga >= 0.1:
-            risk += 0.05
+        if pga >= 0.5:
+            risk += 0.50
+        elif pga >= 0.3:
+            risk += 0.35
+        elif pga >= 0.15:
+            risk += 0.20
+        elif pga >= 0.08:
+            risk += 0.10
 
-    # Slope contribution (0-0.3)
+    # Slope contribution (0 - 0.40)
     slope = sample.slope_pct
     if slope is not None:
         abs_slope = abs(slope)
-        if abs_slope > 15.0:
-            risk += 0.3
-        elif abs_slope > 8.0:
-            risk += 0.2
-        elif abs_slope > 5.0:
-            risk += 0.1
+        if abs_slope > 12.0:
+            risk += 0.40
+        elif abs_slope > 7.0:
+            risk += 0.28
+        elif abs_slope > 3.5:
+            risk += 0.15
 
-    # Low elevation / flood plain contribution (0-0.3)
+    # Low elevation / flood plain contribution (0 - 0.40)
     elev = mireye.get("elevation_m")
     if elev is not None:
         if elev < 5.0:
-            risk += 0.3  # Coastal / tidal flood zone
+            risk += 0.40  # Coastal / tidal flood zone
         elif elev < 20.0:
-            risk += 0.2  # Low-lying flood plain
+            risk += 0.28  # Low-lying flood plain
         elif elev < 50.0:
-            risk += 0.05
+            risk += 0.12
 
-    # Check Mireye raw fields for additional hazard signals
+    # Check Mireye raw fields for additional hazard signals (wildfire, flood, landslide)
     raw_fields = mireye.get("raw_fields", {})
     for field_name, field_data in raw_fields.items():
         fname_lower = field_name.lower()
-        if any(kw in fname_lower for kw in ["flood", "wildfire", "fire", "landslide", "tsunami"]):
+        if any(kw in fname_lower for kw in ["flood", "wildfire", "fire", "landslide", "tsunami", "hazard"]):
             val = field_data.get("value") if isinstance(field_data, dict) else None
             if val is not None and isinstance(val, (int, float)) and val > 0:
-                risk += min(0.2, val / 10.0)
+                risk += min(0.40, (val / 10.0) * 0.40)
 
     return min(risk, 1.0)
 

@@ -33,8 +33,8 @@ class RoutingService:
                 detail="No route found between these locations."
             )
 
-        parsed_routes: List[Route] = []
-        for idx, r_data in enumerate(raw_routes):
+        # Parallelize physical route sampling across ALL candidate corridors
+        async def process_single_route(idx: int, r_data: dict) -> Route:
             route_id = f"route_{idx + 1}"
             dist_m = float(r_data.get("distance", 0.0))
             dur_s = float(r_data.get("duration", 0.0))
@@ -66,7 +66,7 @@ class RoutingService:
             valid_ages = [b["age_years"] for b in bridge_list if b.get("age_years") is not None]
             avg_age = round(sum(valid_ages) / len(valid_ages), 1) if valid_ages else 0
 
-            route_obj = Route(
+            return Route(
                 route_id=route_id,
                 geometry=geometry,
                 distance_m=round(dist_m, 1),
@@ -85,9 +85,13 @@ class RoutingService:
                     ]
                 }
             )
-            parsed_routes.append(route_obj)
 
-        return parsed_routes
+        import asyncio
+        parsed_routes = await asyncio.gather(
+            *[process_single_route(idx, r_data) for idx, r_data in enumerate(raw_routes)]
+        )
+
+        return list(parsed_routes)
 
     async def generate_and_analyze(
         self,
@@ -169,27 +173,39 @@ class RoutingService:
         Generate lateral bypass corridors by querying OSRM through perpendicular midpoint anchors.
         Ensures RouteShield discovers real alternative evacuation paths even when OSRM defaults to 1.
         """
+        import math
         lat1, lon1 = origin.latitude, origin.longitude
         lat2, lon2 = destination.latitude, destination.longitude
 
         mid_lat = (lat1 + lat2) / 2.0
         mid_lon = (lon1 + lon2) / 2.0
+
         d_lat = lat2 - lat1
         d_lon = lon2 - lon1
+        mag = math.sqrt(d_lat * d_lat + d_lon * d_lon)
+        if mag < 1e-6:
+            return []
 
-        # Perpendicular lateral offsets (both directions, moderate & wide)
-        offsets = [0.35, -0.35, 0.55, -0.55]
+        # Unit perpendicular vector
+        perp_lat = -d_lon / mag
+        perp_lon = d_lat / mag
+
+        # Base minimum duration from existing routes
+        fastest_duration = min((float(r.get("duration", 0.0)) for r in existing_routes), default=0.0)
+
+        # Perpendicular offsets (~1.5 km, ~3 km, ~5 km)
+        offsets_deg = [0.015, -0.015, 0.03, -0.03, 0.05, -0.05]
         new_routes: List[dict] = []
 
         existing_distances = [float(r.get("distance", 0.0)) for r in existing_routes]
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            for scale in offsets:
+            for offset in offsets_deg:
                 if len(existing_routes) + len(new_routes) >= 3:
                     break
 
-                w_lat = mid_lat - d_lon * scale
-                w_lon = mid_lon + d_lat * scale
+                w_lat = mid_lat + perp_lat * offset
+                w_lon = mid_lon + perp_lon * offset
 
                 path_str = f"{lon1},{lat1};{w_lon:.5f},{w_lat:.5f};{lon2},{lat2}"
                 synth_url = f"{self.osrm_base_url}/route/v1/driving/{path_str}"
@@ -205,12 +221,16 @@ class RoutingService:
                         if d.get("code") == "Ok" and d.get("routes"):
                             cand = d["routes"][0]
                             cand_dist = float(cand.get("distance", 0.0))
+                            cand_dur = float(cand.get("duration", 0.0))
                             
-                            # Deduplicate if distance is within 5% of any existing route
-                            is_duplicate = any(abs(cand_dist - ed) / max(1.0, ed) < 0.05 for ed in (existing_distances + [float(r.get("distance", 0.0)) for r in new_routes]))
+                            # Filter out duplicate routes (<3% dist difference)
+                            is_duplicate = any(abs(cand_dist - ed) / max(1.0, ed) < 0.03 for ed in (existing_distances + [float(r.get("distance", 0.0)) for r in new_routes]))
                             
-                            if not is_duplicate and cand_dist > 0:
-                                logger.info(f"Synthesized distinct bypass corridor: {cand_dist/1000.0:.1f} km ({float(cand.get('duration', 0.0))/60.0:.1f} min)")
+                            # Filter out extreme detours (>2.2x duration of primary route)
+                            is_excessive_detour = fastest_duration > 0 and (cand_dur / fastest_duration > 2.2)
+
+                            if not is_duplicate and not is_excessive_detour and cand_dist > 0:
+                                logger.info(f"Synthesized distinct bypass corridor: {cand_dist/1000.0:.1f} km ({cand_dur/60.0:.1f} min)")
                                 new_routes.append(cand)
                 except Exception as e:
                     logger.debug(f"Lateral bypass query failed: {e}")

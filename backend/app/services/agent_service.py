@@ -103,10 +103,14 @@ async def run_agent_analysis(
             f"corridor between {origin.display_name} and {destination.display_name}."
         )
         try:
-            insight = await mireye_data_service.ask_question(
-                worst_bottleneck.latitude,
-                worst_bottleneck.longitude,
-                question
+            import asyncio
+            insight = await asyncio.wait_for(
+                mireye_data_service.ask_question(
+                    worst_bottleneck.latitude,
+                    worst_bottleneck.longitude,
+                    question
+                ),
+                timeout=3.5
             )
             if insight:
                 mireye_insight = insight
