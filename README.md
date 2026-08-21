@@ -1,152 +1,89 @@
 # RouteShield
 
-**Agentic Evacuation Corridor Intelligence & Hazard-Infrastructure Risk Engine**
+When a disaster hits, Google Maps routes you fast. RouteShield routes you **safe**.
 
-RouteShield is an intelligent evacuation routing system designed for emergency scenarios. Traditional GPS navigation optimizes strictly for travel time and distance. During natural disasters (wildfires, hurricane storm surges, flash floods, or earthquakes), the fastest route is often the most fragile—crossing aging bridges, traversing steep landslide-prone slopes, or passing through flood-prone lowlands.
+Standard navigation optimizes for time. During a wildfire, hurricane, or earthquake, the fastest road is often the first one that fails — a bridge that's been rated "poor condition" for 20 years, a canyon road that floods in 30 minutes, a highway overpass sitting on a fault line.
 
-RouteShield evaluates the physical conditions along entire evacuation corridors to derive risk signals that neither routing engines nor hazard datasets provide on their own.
-
----
-
-## What RouteShield Does
-
-1. **Multi-Corridor Discovery**: Generates multiple candidate evacuation paths via OSRM, including synthesized lateral bypass corridors to prevent corridor collapse.
-2. **High-Resolution Spatial Sampling**: Interpolates corridors into discrete physical sample points at 500m intervals.
-3. **Multi-Layer Infrastructure & Environmental Enrichment**:
-   - **Bridge Vulnerability**: Spatial cross-referencing against 740,000+ FHWA National Bridge Inventory structures (deck/superstructure/substructure condition, age, traffic volume).
-   - **Terrain Elevation & Slope**: Macro Digital Elevation Model (Open-Meteo DEM) and gradient percentage calculation between consecutive points.
-   - **Ground-Truth Physical Facts**: Targeted Mireye API queries (`/v1/fetch` and `/v1/ask`) for seismic peak ground acceleration (PGA), flood plain indicators, and natural hazard intelligence.
-4. **Hazard-Infrastructure Bottleneck Detection**: Calculates a composite **Bottleneck Severity Index (BSI)** for every sample point where vulnerable physical infrastructure coincides with environmental hazards.
-5. **Route Viability Assessment**: Computes a 0–100 viability score per corridor and enforces hard rejection thresholds for catastrophic structural failure risks.
-6. **Evacuation Decision Trace**: Ranks corridors into `PRIMARY`, `BACKUP`, and `HIGH RISK` with an evidence-backed narrative and speed-vs-safety trade-off analysis.
+RouteShield analyzes the full physical picture along every candidate evacuation corridor and tells you which route to take, which to keep as a backup, and which to avoid entirely.
 
 ---
 
-## Architecture & Data Flow
+## How it works
 
-```
-User Input (Origin, Waypoints, Destination)
-                 │
-                 ▼
-[Mireye Geocoding Engine]
-  └── Resolves addresses via Mireye /v1/geocode + /v1/lookup
-                 │
-                 ▼
-[OSRM Routing & Corridor Synthesizer]
-  └── Discovers 2–4 distinct driving corridors (with lateral bypass generation)
-                 │
-                 ▼
-[Adaptive Two-Tier Sampling Pipeline]
-  ├── Phase 1: Haversine physical distance interpolation (500m intervals)
-  ├── Phase 2: Bulk DEM elevation querying (Open-Meteo chunked requests)
-  ├── Phase 3: Spatial bridge search against local FHWA NBI SQLite index (300m radius)
-  ├── Phase 4: Critical Point Selection (worst bridge, steepest slope, lowest elevation, midpoint)
-  └── Phase 5: Targeted Mireye /v1/fetch (exact 4 physical-world probes per route)
-                 │
-                 ▼
-[Corridor Risk Assessment Engine]
-  ├── Bottleneck Severity Index (BSI = Hazard Risk × (1 + Bridge Vulnerability) × Terrain Penalty)
-  ├── Route Viability Scoring (0–100) & Catastrophic Rejection Rules
-  ├── Mireye /v1/ask Grounded Query on Peak Bottleneck
-  └── Primary / Backup / High Risk Corridor Classification
-                 │
-                 ▼
-[Mission Control Dashboard (Frontend)]
-  ├── Geospatial Corridor HUD with hazard-colored sample points & bottleneck badges
-  ├── Interactive SVG Terrain Elevation Cross-Section Chart with bridge overlays
-  ├── Corridor Risk Assessment Report with Speed vs. Safety Trade-Off
-  └── Physical Sample Inspector with NBI structure details & telemetry
-```
+You give it an origin and destination. It:
+
+1. **Finds multiple routes** — not just the fastest, but lateral bypass corridors too, so you're never stuck with one option
+2. **Samples every 500m** along each route and pulls physical data at each point:
+   - Elevation and slope from USGS 3DEP
+   - Bridge condition from the FHWA National Bridge Inventory (740k+ US bridges)
+   - Seismic hazard, wildfire risk, flood zone, landslide susceptibility, dam proximity and more from [Mireye](https://mireye.ai)
+3. **Scores each point** with a Bottleneck Severity Index — a composite of hazard exposure, bridge vulnerability, and terrain difficulty
+4. **Ranks routes** into Primary, Backup, and High Risk with a plain-English explanation of what's wrong and why
+
+The worst bottleneck on the worst route gets a deep-dive AI analysis from Mireye's `/v1/ask` endpoint — grounded in real datasets with citations.
 
 ---
 
-## Derived Signals & Formulations
+## Data sources
 
-### 1. Bottleneck Severity Index (BSI)
-$$BSI = \text{Hazard Risk} \times (1 + \text{Bridge Vulnerability}) \times \text{Terrain Penalty}$$
-
-- **Hazard Risk ($0.0 - 1.0$)**: Derived from seismic PGA ($\ge 0.4g$), low flood plain elevation ($<20m$), and steep gradient ($>8\%$).
-- **Bridge Vulnerability ($0.0 - 2.5$)**: Derived from FHWA NBI deck, superstructure, and substructure condition codes (Poor $= 2.0$, Fair $= 1.0$, Good $= 0.2$) with bridge age penalties ($>40$ years built).
-- **Terrain Penalty ($1.0 - 1.8$)**: Grade multipliers for steep ($\ge 8\%$) and extreme ($\ge 15\%$) mountain grades.
-
-| BSI Score | Classification | Action |
-| :--- | :--- | :--- |
-| $\ge 0.65$ | **Critical Bottleneck** | Chokepoint marker rendered; penalized in viability scoring. |
-| $\ge 0.35$ | **Moderate Bottleneck** | Advisory warning on corridor segment. |
-| $> 3.50$ | **Catastrophic Risk** | Automatic route rejection trigger. |
-
-### 2. Corridor Viability Score ($0 - 100$)
-$$\text{Score} = 100 - (40 \times \text{Hazard Exposure \%}) - (25 \times \text{Bottleneck Penalty}) - (10 \times \text{Time Delta Penalty})$$
+| What | Source |
+|---|---|
+| Routing | OSRM (public) |
+| Elevation + slope | Open-Meteo DEM / USGS 3DEP via Mireye |
+| Bridge conditions | FHWA National Bridge Inventory (local SQLite) |
+| Seismic PGA | USGS NSHM 2023 via Mireye |
+| Flood zones | FEMA NFHL (SFHA + zone codes) via Mireye |
+| Wildfire | FEMA NRI + CAL FIRE FHSZ via Mireye |
+| Landslide | USGS Landslide Susceptibility via Mireye |
+| Dam hazard | USACE National Inventory of Dams via Mireye |
+| Geocoding | Mireye `/v1/geocode` + `/v1/lookup` |
 
 ---
 
-## What Has Been Completed
+## Running it
 
-- [x] **Mireye Geocoding Integration**: Property-level geocoding via `/v1/geocode` with anchor fallback for coarse city queries and county/state metadata from `/v1/lookup`.
-- [x] **Credit-Efficient Two-Tier Sampling**: Reduced API credit burn from 200+ calls to $\le 4$ targeted `/v1/fetch` probes per corridor based on worst bridge condition, steepest slope, lowest elevation, and route midpoint.
-- [x] **FHWA National Bridge Inventory Engine**: Spatial indexing and condition parsing for 740,000+ US bridges with deterministic fallback dataset.
-- [x] **Open-Meteo DEM Integration**: Batch-chunked elevation lookups ($\le 80$ coords per request) to prevent API payload limits on long corridors.
-- [x] **Alternative Corridor Synthesizer**: Perpendicular lateral waypoint generation to force OSRM to discover true bypass highways when standard routing returns only 1 path.
-- [x] **Bottleneck Severity Index (BSI) Engine**: Multi-factor vulnerability scoring across bridges, seismic data, elevation, and terrain grade.
-- [x] **Viability & Rejection Engine**: Dynamic scoring with catastrophic bottleneck filters and primary/backup ranking.
-- [x] **Mireye `/v1/ask` Deep Insight**: Contextual environmental assessment query fired on the worst detected corridor bottleneck.
-- [x] **Tactical Mission Control UI**: Clean dark geospatial HUD (Inter + JetBrains Mono) with SVG elevation cross-sections, interactive sample inspector, and corridor risk report.
+**Requirements:** Python 3.10+, Node 18+
 
----
-
-## Quickstart & Local Setup
-
-### Prerequisites
-- Python 3.10+
-- Node.js 18+ & npm
-
-### 1. Configure Environment
-Create a `.env` file in the project root directory:
-
+**1. Set up your `.env`**
 ```env
-MIREYE_API_KEY=your_mireye_api_key_here
+MIREYE_API_KEY=your_key_here
 MIREYE_BASE_URL=https://api.mireye.com/v1
 OSRM_BASE_URL=http://router.project-osrm.org
 ROUTE_SAMPLE_INTERVAL_M=500
 ENABLE_CACHE=true
 ```
 
-### 2. Run Backend (FastAPI)
-
+**2. Backend**
 ```bash
 cd backend
-python3 -m venv venv
-source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. Run Frontend (React + Vite)
-
+**3. Frontend**
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Open `http://localhost:3000` (or `3001`).
+Open `http://localhost:5173`.
 
 ---
 
-## Recommended Test Corridors
+## Good corridors to test
 
-| Scenario | Origin | Destination | What It Demonstrates |
-| :--- | :--- | :--- | :--- |
-| **Mountain Flood & Landslides** | `Asheville, NC` | `Charlotte, NC` | Identifies steep river gorge bridges, elevation drops, and recommends safer valley corridors. |
-| **Wildfire Canyon Evacuation** | `Paradise, CA` | `Chico, CA` | Evaluates single-point-of-failure canyon routes vs. secondary bypass roads. |
-| **Seismic Faultline Crossing** | `Santa Cruz, CA` | `San Jose, CA` | Detects high seismic PGA and aging overpasses on Highway 17; evaluates coastal/valley bypasses. |
-| **Coastal Hurricane Surge** | `Key West, FL` | `Miami, FL` | Flags low-elevation causeways and tidal flood risks across the Overseas Highway. |
+| Scenario | From | To |
+|---|---|---|
+| Mountain flooding + landslides | Asheville, NC | Charlotte, NC |
+| Wildfire canyon (Camp Fire corridor) | Paradise, CA | Chico, CA |
+| Seismic fault crossings | Santa Cruz, CA | San Jose, CA |
+| Coastal hurricane surge | Key West, FL | Miami, FL |
 
 ---
 
-## Test Suite
+## Tests
 
 ```bash
-cd backend
-python3 -m pytest tests/ -v
+cd backend && python3 -m pytest tests/ -v
 ```

@@ -96,12 +96,7 @@ async def run_agent_analysis(
                 worst_route_id = route.route_id
 
     if worst_bottleneck and worst_bsi >= 0.35:
-        question = (
-            f"What are the primary natural hazard risks and environmental vulnerabilities "
-            f"at this location? Consider flood risk, seismic activity, landslide potential, "
-            f"wildfire exposure, and terrain stability. This point is along an evacuation "
-            f"corridor between {origin.display_name} and {destination.display_name}."
-        )
+        question = _build_ask_question(worst_bottleneck, worst_route_id, origin, destination, routes)
         try:
             insight = await mireye_data_service.ask_question(
                 worst_bottleneck.latitude,
@@ -163,6 +158,84 @@ async def run_agent_analysis(
     logger.info(f"Agent Decision: Primary={decision.primary_route_id}, Backup={decision.backup_route_id}")
     return decision
 
+
+
+
+def _build_ask_question(bottleneck, route_id: str, origin, destination, routes: list) -> str:
+    """
+    Build a hazard-type-specific /v1/ask prompt based on the dominant signal
+    that drove this bottleneck's BSI score.
+    """
+    mireye = {}
+    for route in routes:
+        for sample in route.samples:
+            if sample.sample_id == bottleneck.sample_id:
+                mireye = sample.mireye_data or {}
+                break
+
+    corridor = f"evacuation corridor between {origin.display_name} and {destination.display_name}"
+
+    fhsz = mireye.get("fire_hazard_zone")
+    wf_freq = mireye.get("wildfire_annual_freq", 0) or 0
+    is_floodplain = mireye.get("within_floodplain") is True
+    dam_hazard = mireye.get("nearest_dam_hazard")
+    dam_dist = mireye.get("nearest_dam_distance_m")
+    pga = mireye.get("seismic_pga_g", 0) or 0
+    ls = mireye.get("landslide_susceptibility", 0) or 0
+    burn_perimeter = mireye.get("nearest_fire_perimeter_m", float("inf"))
+
+    # Wildfire dominant
+    if fhsz in ("Very High", "High") or burn_perimeter < 100 or wf_freq >= 0.001:
+        burn_year = mireye.get("most_recent_burn_year")
+        burn_note = f" It was within the {burn_year} burn perimeter." if burn_year else ""
+        return (
+            f"What are the wildfire evacuation risks and road accessibility challenges "
+            f"at this coordinate?{burn_note} Specifically: what is the CAL FIRE hazard "
+            f"classification, what are the primary egress routes, and how did past fire "
+            f"events affect road closures in this area? This is a critical segment of the "
+            f"{corridor}."
+        )
+
+    # Flood + dam dominant
+    if is_floodplain or (dam_hazard == "High" and dam_dist is not None and dam_dist < 5000):
+        dam_note = f" A High-hazard dam is {dam_dist:.0f}m away." if dam_hazard == "High" and dam_dist else ""
+        return (
+            f"What are the flood inundation and bridge scour risks at this coordinate "
+            f"during a major storm or dam failure event?{dam_note} "
+            f"Include FEMA flood zone classification, historical flood records, "
+            f"and any bridge vulnerability at this river crossing. "
+            f"This is a critical segment of the {corridor}."
+        )
+
+    # Seismic dominant
+    if pga >= 0.3:
+        sdc = mireye.get("seismic_design_category", "")
+        sdc_note = f" (ASCE 7 Seismic Design Category {sdc})" if sdc else ""
+        return (
+            f"What are the seismic risks and infrastructure vulnerabilities "
+            f"at this coordinate{sdc_note}? Consider proximity to active fault lines, "
+            f"soil liquefaction potential, and the condition of any bridges or overpasses "
+            f"along this section. PGA is {pga:.2f}g. "
+            f"This is a critical segment of the {corridor}."
+        )
+
+    # Landslide dominant
+    if ls >= 40:
+        return (
+            f"What are the landslide and terrain stability risks at this coordinate "
+            f"(USGS landslide susceptibility index {ls}/100)? "
+            f"Consider slope instability, soil type, historical slide events, "
+            f"and whether road cut sections pose closure risk. "
+            f"This is a critical segment of the {corridor}."
+        )
+
+    # Generic fallback
+    return (
+        f"What are the primary natural hazard risks — flood, wildfire, seismic, "
+        f"and terrain stability — at this coordinate? Focus on factors most likely "
+        f"to cause road closure or structural failure during emergency evacuation. "
+        f"This is a critical segment of the {corridor}."
+    )
 
 def _generate_executive_summary(
     routes: List[Route],

@@ -10,7 +10,7 @@ from app.services.open_meteo_service import open_meteo_service
 logger = logging.getLogger(__name__)
 
 # Maximum number of Mireye /v1/fetch calls per route
-MAX_MIREYE_PROBES = 4
+MAX_MIREYE_PROBES = 6
 
 
 class SamplingService:
@@ -121,27 +121,51 @@ class SamplingService:
         )
 
         # ====================================================================
-        # PHASE 5: Fire exactly N Mireye /v1/fetch calls on critical points
+        # PHASE 5: Mireye /v1/fetch on critical points (two-preset strategy)
+        # - All critical points: natural_hazard preset (seismic, wildfire, etc.)
+        # - Low-elevation points (elev < 50m): additional flood_risk preset call
+        #   to get fema_flood_zone code, intersects_nhd_area, wetland data, etc.
         # ====================================================================
         semaphore = asyncio.Semaphore(4)
         mireye_results = {}
 
-        async def fetch_mireye(idx: int, lat: float, lon: float):
+        # Identify which critical points are low-elevation (flood candidates)
+        low_elev_indices = {
+            idx for idx in critical_indices
+            if elevations[idx] is not None and elevations[idx] < 50.0
+        }
+
+        async def fetch_mireye(idx: int, lat: float, lon: float, preset: str):
             async with semaphore:
-                result = await mireye_data_service.fetch_location_facts(lat, lon, preset="natural_hazard")
+                result = await mireye_data_service.fetch_location_facts(lat, lon, preset=preset)
                 return idx, result
 
+        # Primary: natural_hazard preset for all critical points
         mireye_tasks = [
-            fetch_mireye(idx, point_targets[idx][0], point_targets[idx][1])
+            fetch_mireye(idx, point_targets[idx][0], point_targets[idx][1], "natural_hazard")
             for idx in critical_indices
         ]
-        if mireye_tasks:
-            results = await asyncio.gather(*mireye_tasks, return_exceptions=True)
+        # Secondary: flood_risk preset for low-elevation points (merges richer flood fields)
+        flood_tasks = [
+            fetch_mireye(idx, point_targets[idx][0], point_targets[idx][1], "flood_risk")
+            for idx in low_elev_indices
+        ]
+
+        all_tasks = mireye_tasks + flood_tasks
+        if all_tasks:
+            results = await asyncio.gather(*all_tasks, return_exceptions=True)
             for r in results:
                 if isinstance(r, tuple):
                     idx, data = r
                     if isinstance(data, dict):
-                        mireye_results[idx] = data
+                        if idx not in mireye_results:
+                            mireye_results[idx] = data
+                        else:
+                            # Merge flood_risk fields into existing natural_hazard result
+                            # flood_risk fields (fema_flood_zone, coast_distance_m, etc.) take priority
+                            for key, val in data.items():
+                                if key not in ("lat", "lng", "fetched_at") and val is not None:
+                                    mireye_results[idx][key] = val
 
         # ====================================================================
         # PHASE 6: Construct RouteSample objects
@@ -256,20 +280,35 @@ class SamplingService:
         if mid_idx not in selected:
             selected.add(mid_idx)
 
-        # Fill remaining slots if we have fewer than MAX_MIREYE_PROBES
-        # Use next-steepest slopes or next-worst bridges
-        remaining_candidates = []
+        # 5. Top pre-BSI estimate: bridge_vuln * terrain_penalty * elevation_risk
+        # (uses only Open-Meteo + NBI data, no Mireye required)
+        pre_bsi_scores = []
         for idx in range(n):
-            if idx not in selected:
-                score = 0.0
-                if slopes[idx] is not None:
-                    score += abs(slopes[idx])
-                if nbi_results[idx]:
-                    score += 3.0
-                remaining_candidates.append((score, idx))
-        remaining_candidates.sort(reverse=True)
+            if idx in selected:
+                continue
+            # Bridge vulnerability heuristic
+            bridges = nbi_results[idx] or []
+            b_vuln = 0.0
+            for b in bridges:
+                deck = str(b.get("deck_condition", "")).strip()
+                if deck.isdigit():
+                    cond = float(deck)
+                    if cond <= 4:
+                        b_vuln = max(b_vuln, 2.0)
+                    elif cond <= 6:
+                        b_vuln = max(b_vuln, 1.0)
+            # Terrain penalty heuristic
+            s = slopes[idx]
+            abs_s = abs(s) if s is not None else 0.0
+            t_pen = 1.8 if abs_s > 15 else (1.5 if abs_s > 8 else (1.2 if abs_s > 3 else 1.0))
+            # Elevation flood risk heuristic
+            e = elevations[idx]
+            elev_risk = 0.3 if (e is not None and e < 5) else (0.2 if (e is not None and e < 20) else 0.05)
+            pre_bsi = elev_risk * (1.0 + b_vuln) * t_pen
+            pre_bsi_scores.append((pre_bsi, idx))
 
-        for score, idx in remaining_candidates:
+        pre_bsi_scores.sort(reverse=True)
+        for pre_bsi, idx in pre_bsi_scores:
             if len(selected) >= MAX_MIREYE_PROBES:
                 break
             selected.add(idx)

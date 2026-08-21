@@ -78,52 +78,150 @@ def _terrain_penalty(slope_pct: float) -> float:
 def _hazard_risk(sample: RouteSample) -> float:
     """
     Compute hazard risk score for a sample [0.0 - 1.0].
-    Based on seismic PGA, steep slope, low elevation, and Mireye raw fields.
+
+    Uses all confirmed Mireye natural_hazard fields with explicit, calibrated
+    weights rather than the old generic raw_fields keyword loop.
     """
     risk = 0.0
     mireye = sample.mireye_data or {}
+    bridges = sample.nbi_bridges or []
 
-    # Seismic PGA contribution (0-0.4)
+    # ---- Seismic PGA (0–0.40) ----
     pga = mireye.get("seismic_pga_g")
     if pga is not None:
         if pga >= 0.6:
-            risk += 0.4
+            risk += 0.40
         elif pga >= 0.4:
-            risk += 0.3
+            risk += 0.30
         elif pga >= 0.2:
             risk += 0.15
         elif pga >= 0.1:
             risk += 0.05
 
-    # Slope contribution (0-0.3)
+    # ---- Slope / terrain (0–0.30) ----
+    # slope_pct is computed from Open-Meteo DEM (all samples);
+    # slope_degrees may also be present from Mireye USGS 3DEP.
     slope = sample.slope_pct
+    if slope is None:
+        # Convert Mireye slope_degrees → approximate grade pct
+        slope_deg = mireye.get("slope_degrees")
+        if slope_deg is not None:
+            import math
+            slope = math.tan(math.radians(slope_deg)) * 100.0
     if slope is not None:
         abs_slope = abs(slope)
         if abs_slope > 15.0:
-            risk += 0.3
+            risk += 0.30
         elif abs_slope > 8.0:
-            risk += 0.2
+            risk += 0.20
         elif abs_slope > 5.0:
-            risk += 0.1
+            risk += 0.10
 
-    # Low elevation / flood plain contribution (0-0.3)
+    # ---- Elevation / coastal flood (0–0.30) ----
     elev = mireye.get("elevation_m")
     if elev is not None:
         if elev < 5.0:
-            risk += 0.3  # Coastal / tidal flood zone
+            risk += 0.30   # Coastal / tidal flood zone
         elif elev < 20.0:
-            risk += 0.2  # Low-lying flood plain
+            risk += 0.20   # Low-lying flood plain
         elif elev < 50.0:
             risk += 0.05
 
-    # Check Mireye raw fields for additional hazard signals
-    raw_fields = mireye.get("raw_fields", {})
-    for field_name, field_data in raw_fields.items():
-        fname_lower = field_name.lower()
-        if any(kw in fname_lower for kw in ["flood", "wildfire", "fire", "landslide", "tsunami"]):
-            val = field_data.get("value") if isinstance(field_data, dict) else None
-            if val is not None and isinstance(val, (int, float)) and val > 0:
-                risk += min(0.2, val / 10.0)
+    # ---- FEMA NFHL floodplain polygon (0–0.20) ----
+    # Upgrade: use fema_flood_zone code when available (from flood_risk preset)
+    flood_zone = mireye.get("fema_flood_zone", "")
+    if mireye.get("coastal_high_hazard") is True:
+        risk += 0.30   # V-zone: high-velocity wave action (breaking waves ≥3ft)
+    elif flood_zone.startswith("A") or mireye.get("within_floodplain") is True:
+        risk += 0.20   # A-zone SFHA or NFHL floodplain polygon
+    elif mireye.get("flood_zone_subtype", "") == "0.2 PCT ANNUAL CHANCE FLOOD HAZARD":
+        risk += 0.08   # 0.2% annual (500-yr) flood hazard
+
+    # NHD hydrographic area (river, canal, inundation zone) — bridge scour risk
+    if mireye.get("intersects_nhd_area") is True:
+        risk += 0.10
+
+    # JRC Surface Water permanence — high = permanent water body nearby
+    swp = mireye.get("surface_water_permanence_pct")
+    if swp is not None and swp >= 75:
+        risk += 0.10  # Permanent water channel
+    elif swp is not None and swp >= 25:
+        risk += 0.05  # Seasonal water
+
+    # ---- Wildfire: FEMA NRI annual frequency (0–0.25) ----
+    wf_freq = mireye.get("wildfire_annual_freq")
+    if wf_freq is not None:
+        if wf_freq >= 0.001:      # ≥ 0.1% annual chance — significant fire corridor
+            risk += 0.25
+        elif wf_freq >= 0.0003:
+            risk += 0.15
+        elif wf_freq > 0.0:
+            risk += 0.05
+
+    # ---- Wildfire: CAL FIRE FHSZ class (California only) (0–0.25) ----
+    fhsz = mireye.get("fire_hazard_zone")
+    if fhsz == "Very High":
+        risk += 0.25
+    elif fhsz == "High":
+        risk += 0.15
+    elif fhsz == "Moderate":
+        risk += 0.08
+
+    # ---- Recent burn history: nearest fire perimeter (0–0.15) ----
+    fire_dist = mireye.get("nearest_fire_perimeter_m")
+    burn_year = mireye.get("most_recent_burn_year")
+    if fire_dist is not None and fire_dist < 100.0:
+        # Point was inside or immediately adjacent to a historical burn perimeter
+        risk += 0.15
+    elif fire_dist is not None and fire_dist < 2000.0 and burn_year and burn_year >= 2015:
+        risk += 0.08  # Recent fire within 2 km
+
+    # ---- Landslide susceptibility 0–100 index (0–0.25) ----
+    ls = mireye.get("landslide_susceptibility")
+    if ls is not None:
+        if ls >= 70:
+            risk += 0.25
+        elif ls >= 40:
+            risk += 0.15
+        elif ls >= 20:
+            risk += 0.07
+
+    # ---- Dam hazard (0–0.20) ----
+    dam_dist = mireye.get("nearest_dam_distance_m")
+    dam_hazard = mireye.get("nearest_dam_hazard")
+    hh_dams = mireye.get("high_hazard_dams_10km", 0) or 0
+    if dam_hazard == "High" and dam_dist is not None and dam_dist < 1000.0:
+        risk += 0.20
+    elif dam_hazard == "High" and dam_dist is not None and dam_dist < 5000.0:
+        risk += 0.12
+    elif dam_hazard == "Significant" and dam_dist is not None and dam_dist < 2000.0:
+        risk += 0.06
+    if hh_dams >= 5:
+        risk += 0.05  # Dense upstream dam concentration
+
+    # ---- Karst / sinkhole (0–0.10) ----
+    if mireye.get("in_karst_area") is True:
+        karst_class = mireye.get("karst_exposure_class", "")
+        if karst_class == "exposed":
+            risk += 0.10
+        else:
+            risk += 0.05
+
+    # ---- High wind speed (0–0.08) ----
+    wind_mph = mireye.get("wind_speed_mph")
+    if wind_mph is not None:
+        if wind_mph >= 150:
+            risk += 0.08   # Hurricane-force design wind
+        elif wind_mph >= 130:
+            risk += 0.05
+
+    # ---- Compound: floodplain + bridge → bridge scour risk bonus (0–0.15) ----
+    if mireye.get("within_floodplain") is True and bridges:
+        risk += 0.15
+
+    # ---- Compound: high seismic + bridge → liquefaction/structural bonus (0–0.10) ----
+    if pga is not None and pga >= 0.4 and bridges:
+        risk += 0.10
 
     return min(risk, 1.0)
 
@@ -166,13 +264,73 @@ def analyze_route_bottlenecks(route: Route) -> Tuple[List[BottleneckInfo], Route
             if h_risk > 0.3:
                 risk_factors = []
                 mireye = sample.mireye_data or {}
-                if mireye.get("seismic_pga_g", 0) >= 0.2:
-                    risk_factors.append(f"seismic PGA {mireye['seismic_pga_g']:.2f}g")
+
+                # Seismic
+                pga = mireye.get("seismic_pga_g")
+                if pga and pga >= 0.2:
+                    sdc = mireye.get("seismic_design_category", "")
+                    risk_factors.append(f"seismic PGA {pga:.2f}g (SDC {sdc})" if sdc else f"seismic PGA {pga:.2f}g")
+
+                # Slope
                 if sample.slope_pct and abs(sample.slope_pct) > 8:
                     risk_factors.append(f"steep grade {abs(sample.slope_pct):.1f}%")
+
+                # FEMA flood zone (specific code when available from flood_risk preset)
+                flood_zone = mireye.get("fema_flood_zone", "")
+                if mireye.get("coastal_high_hazard") is True:
+                    risk_factors.append(f"FEMA V-zone (coastal wave action)")
+                elif flood_zone:
+                    subtype = mireye.get("flood_zone_subtype", "")
+                    bfe = mireye.get("fema_base_flood_elevation")
+                    bfe_str = f" BFE {bfe:.0f}ft" if bfe else ""
+                    zone_str = f"FEMA Zone {flood_zone}"
+                    if subtype and "FLOODWAY" in subtype:
+                        zone_str += " (Floodway)"
+                    risk_factors.append(f"{zone_str}{bfe_str}")
+                elif mireye.get("within_floodplain") is True:
+                    risk_factors.append("FEMA NFHL floodplain (SFHA)")
+
+                # NHD hydrographic area — river/canal crossing (bridge scour)
+                if mireye.get("intersects_nhd_area") is True:
+                    risk_factors.append("hydrographic area (river/canal crossing)")
+
+                # Elevation
                 elev = mireye.get("elevation_m")
-                if elev is not None and elev < 20:
+                if elev is not None and elev < 20 and not mireye.get("within_floodplain"):
                     risk_factors.append(f"low elevation {elev:.0f}m")
+
+                # Wildfire — CAL FIRE FHSZ
+                fhsz = mireye.get("fire_hazard_zone")
+                if fhsz in ("Very High", "High"):
+                    burn_year = mireye.get("most_recent_burn_year")
+                    fhsz_str = f"CAL FIRE {fhsz} FHSZ"
+                    if burn_year:
+                        fhsz_str += f" (burned {burn_year})"
+                    risk_factors.append(fhsz_str)
+                elif mireye.get("nearest_fire_perimeter_m", float("inf")) < 100.0:
+                    burn_year = mireye.get("most_recent_burn_year")
+                    risk_factors.append(f"inside burn perimeter ({burn_year})" if burn_year else "inside historical burn perimeter")
+
+                # Wildfire — FEMA NRI (non-CA)
+                wf_freq = mireye.get("wildfire_annual_freq")
+                if wf_freq and wf_freq >= 0.001 and not fhsz:
+                    risk_factors.append(f"wildfire freq {wf_freq:.4f}/yr (FEMA NRI)")
+
+                # Landslide
+                ls = mireye.get("landslide_susceptibility")
+                if ls and ls >= 40:
+                    risk_factors.append(f"landslide susceptibility {ls}/100")
+
+                # Dam
+                dam_dist = mireye.get("nearest_dam_distance_m")
+                dam_hazard = mireye.get("nearest_dam_hazard")
+                if dam_hazard == "High" and dam_dist is not None and dam_dist < 1000.0:
+                    risk_factors.append(f"High-hazard dam {dam_dist:.0f}m upstream")
+
+                # Karst
+                if mireye.get("in_karst_area") is True:
+                    risk_factors.append(f"karst terrain ({mireye.get('karst_exposure_class', 'unknown')} exposure)")
+
                 if risk_factors:
                     desc_parts.append(f"Hazard exposure: {', '.join(risk_factors)}")
 
