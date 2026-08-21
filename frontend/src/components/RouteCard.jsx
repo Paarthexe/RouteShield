@@ -10,10 +10,10 @@ const ROUTE_COLORS = {
 
 export default function RouteCard({ route, isSelected, onSelect, fastestDuration }) {
   const colorScheme = ROUTE_COLORS[route.route_id] || ROUTE_COLORS.route_1;
-  const isFastest = route.route_id === 'route_1';
+  const isFastest = route.travel_time_min === fastestDuration;
 
-  const timeDiffMin = !isFastest && fastestDuration 
-    ? Math.round(route.travel_time_min - fastestDuration)
+  const timeDiffMin = !isFastest && fastestDuration !== undefined
+    ? Math.round((route.travel_time_min - fastestDuration) * 10) / 10
     : 0;
 
   return (

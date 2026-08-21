@@ -6,7 +6,10 @@ import MapView from './components/MapView';
 import SampleInspector from './components/SampleInspector';
 import ErrorNotice from './components/ErrorNotice';
 import { analyzeRoutes } from './services/api';
-import { Layers, Eye, EyeOff, MapPin, Compass, ShieldAlert, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Compass, Info } from 'lucide-react';
+import AnalysisTrace from './components/AnalysisTrace';
+import DecisionReadout from './components/DecisionReadout';
+import RouteComparison from './components/RouteComparison';
 
 export default function App() {
   const [origin, setOrigin] = useState('Financial District, San Francisco, CA');
@@ -71,6 +74,8 @@ export default function App() {
             loading={loading}
           />
 
+          <AnalysisTrace loading={loading} analysisData={analysisData} error={error} />
+
           {error && (
             <ErrorNotice
               message={error}
@@ -116,6 +121,10 @@ export default function App() {
 
         {/* Right Column: Map & Sampling Inspector (8 cols on lg) */}
         <div className="lg:col-span-8 space-y-4">
+
+          {analysisData && (
+            <DecisionReadout routes={analysisData.routes} selectedRoute={selectedRouteObj} />
+          )}
           
           {/* Map Toolbar */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-md">
@@ -175,6 +184,22 @@ export default function App() {
               onClose={() => setSelectedSample(null)}
             />
           )}
+
+          {analysisData && (
+            <RouteComparison
+              routes={analysisData.routes}
+              selectedRouteId={selectedRouteId}
+              onSelectRoute={(id) => {
+                setSelectedRouteId(id);
+                setSelectedSample(null);
+              }}
+            />
+          )}
+
+          <div className="flex items-start gap-2 rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-3 text-[11px] leading-relaxed text-slate-500">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <span>Decision-support prototype: route conditions can change during an active emergency. Current results are based on the configured routing and physical-world data sources and are not an official dispatch instruction.</span>
+          </div>
 
         </div>
       </main>
