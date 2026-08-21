@@ -367,3 +367,36 @@ class SamplingService:
         return lat, lon
 
 sampling_service = SamplingService()
+
+
+def compute_traffic_adjusted_duration(samples: List[RouteSample], fallback_duration_s: float) -> float:
+    """
+    Calculate total traffic-adjusted duration in seconds based on sample point traffic flow speeds.
+    """
+    if not samples or len(samples) < 2:
+        return fallback_duration_s
+
+    has_traffic = any(s.traffic_flow and s.traffic_flow.get("current_speed_kmh") for s in samples)
+    if not has_traffic:
+        return fallback_duration_s
+
+    total_traffic_s = 0.0
+    total_dist_m = samples[-1].distance_from_origin_m
+    fallback_speed_ms = (total_dist_m / fallback_duration_s) if fallback_duration_s > 0 else 13.88
+
+    for i in range(len(samples) - 1):
+        s1 = samples[i]
+        s2 = samples[i + 1]
+        dist_seg_m = s2.distance_from_origin_m - s1.distance_from_origin_m
+        if dist_seg_m <= 0:
+            continue
+
+        tf = s1.traffic_flow
+        speed_kmh = tf.get("current_speed_kmh", 0.0) if tf else 0.0
+        if speed_kmh > 1.0:
+            speed_ms = speed_kmh / 3.6
+            total_traffic_s += dist_seg_m / speed_ms
+        else:
+            total_traffic_s += dist_seg_m / max(1.0, fallback_speed_ms)
+
+    return round(total_traffic_s, 1)

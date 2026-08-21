@@ -4,7 +4,7 @@ from typing import List, Optional
 from fastapi import HTTPException, status
 from app.config import settings
 from app.models.route_models import Coordinate, Route, GeoJSONLineString, AgentDecision, Location
-from app.services.sampling import sampling_service
+from app.services.sampling import sampling_service, compute_traffic_adjusted_duration
 from app.services.cache import cache_service
 from app.services.agent_service import run_agent_analysis
 
@@ -66,13 +66,16 @@ class RoutingService:
             valid_ages = [b["age_years"] for b in bridge_list if b.get("age_years") is not None]
             avg_age = round(sum(valid_ages) / len(valid_ages), 1) if valid_ages else 0
 
+            # Compute traffic-adjusted duration from TomTom speed probes
+            final_dur_s = compute_traffic_adjusted_duration(samples, dur_s)
+
             return Route(
                 route_id=route_id,
                 geometry=geometry,
                 distance_m=round(dist_m, 1),
-                duration_s=round(dur_s, 1),
+                duration_s=round(final_dur_s, 1),
                 distance_km=round(dist_m / 1000.0, 2),
-                travel_time_min=round(dur_s / 60.0, 1),
+                travel_time_min=round(final_dur_s / 60.0, 1),
                 tag=tag,
                 samples=samples,
                 infrastructure_summary={

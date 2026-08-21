@@ -299,11 +299,31 @@ export default function MapView({
           const hasTraffic = isSelected && route.samples && route.samples.some(s => s.traffic_flow);
           const trafficSegments = [];
 
-          if (hasTraffic && route.samples.length > 1) {
+          if (hasTraffic && route.samples.length > 1 && positions.length > 1) {
+            // Find nearest coordinate index in full road geometry for each sample point
+            const sampleGeoIndices = route.samples.map(s => {
+              let minD = Infinity;
+              let bestIdx = 0;
+              for (let pIdx = 0; pIdx < positions.length; pIdx++) {
+                const [lat, lon] = positions[pIdx];
+                const d = (lat - s.latitude) ** 2 + (lon - s.longitude) ** 2;
+                if (d < minD) {
+                  minD = d;
+                  bestIdx = pIdx;
+                }
+              }
+              return bestIdx;
+            });
+
             for (let i = 0; i < route.samples.length - 1; i++) {
               const s1 = route.samples[i];
-              const s2 = route.samples[i + 1];
               const tf = s1.traffic_flow;
+
+              const idxStart = sampleGeoIndices[i];
+              const idxEnd = Math.max(idxStart + 1, sampleGeoIndices[i + 1]);
+              const segCoords = positions.slice(idxStart, idxEnd + 1);
+
+              if (segCoords.length < 2) continue;
 
               let segColor = strokeColor;
               let condStr = "Traffic Flow Normal";
@@ -327,7 +347,7 @@ export default function MapView({
               }
 
               trafficSegments.push({
-                coords: [[s1.latitude, s1.longitude], [s2.latitude, s2.longitude]],
+                coords: segCoords,
                 color: segColor,
                 condition: condStr,
                 speed: speedStr

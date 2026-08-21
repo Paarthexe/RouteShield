@@ -67,3 +67,37 @@ async def test_generate_candidate_routes_no_routes():
         with pytest.raises(HTTPException) as excinfo:
             await service.generate_candidate_routes(origin, destination)
         assert excinfo.value.status_code == 404
+
+
+def test_compute_traffic_adjusted_duration():
+    from app.services.sampling import compute_traffic_adjusted_duration
+    from app.models.route_models import RouteSample
+
+    # Test fallback to OSRM duration when no traffic data present
+    samples_no_traffic = [
+        RouteSample(sample_id="s1", route_id="r1", latitude=10.0, longitude=10.0, distance_from_origin_m=0.0),
+        RouteSample(sample_id="s2", route_id="r1", latitude=10.1, longitude=10.1, distance_from_origin_m=10000.0)
+    ]
+    assert compute_traffic_adjusted_duration(samples_no_traffic, fallback_duration_s=600.0) == 600.0
+
+    # Test TomTom probe speed scaling (30 km/h on 10 km segment = 1200 seconds)
+    samples_with_traffic = [
+        RouteSample(
+            sample_id="s1",
+            route_id="r1",
+            latitude=10.0,
+            longitude=10.0,
+            distance_from_origin_m=0.0,
+            traffic_flow={"current_speed_kmh": 30.0, "free_flow_speed_kmh": 60.0, "congestion_condition": "Heavy Congestion"}
+        ),
+        RouteSample(
+            sample_id="s2",
+            route_id="r1",
+            latitude=10.1,
+            longitude=10.1,
+            distance_from_origin_m=10000.0,
+            traffic_flow={"current_speed_kmh": 30.0, "free_flow_speed_kmh": 60.0, "congestion_condition": "Heavy Congestion"}
+        )
+    ]
+    adj_dur = compute_traffic_adjusted_duration(samples_with_traffic, fallback_duration_s=600.0)
+    assert adj_dur == 1200.0
