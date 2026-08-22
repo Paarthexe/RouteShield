@@ -6,12 +6,9 @@ from app.utils.geo import haversine_distance, interpolate_coordinate
 from app.services.nbi_service import nbi_service
 from app.services.mireye_service import mireye_data_service
 from app.services.open_meteo_service import open_meteo_service
+from app.config import settings
 
 logger = logging.getLogger(__name__)
-
-# Maximum number of Mireye /v1/fetch calls per route
-MAX_MIREYE_PROBES = 6
-
 
 class SamplingService:
     async def sample_route(
@@ -126,7 +123,7 @@ class SamplingService:
         # - Low-elevation points (elev < 50m): additional flood_risk preset call
         #   to get fema_flood_zone code, intersects_nhd_area, wetland data, etc.
         # ====================================================================
-        semaphore = asyncio.Semaphore(4)
+        semaphore = asyncio.Semaphore(settings.MIREYE_MAX_CONCURRENCY)
         mireye_results = {}
 
         # Identify which critical points are low-elevation (flood candidates)
@@ -220,7 +217,7 @@ class SamplingService:
         slopes: List[float]
     ) -> Set[int]:
         """
-        Select up to MAX_MIREYE_PROBES critical indices for Mireye deep probing.
+        Select up to the configured maximum critical indices for Mireye deep probing.
         Selection criteria:
         1. Worst NBI bridge condition (most vulnerable bridge nearby)
         2. Steepest absolute slope change (landslide / terrain difficulty)
@@ -230,7 +227,8 @@ class SamplingService:
         n = len(point_targets)
         if n == 0:
             return set()
-        if n <= MAX_MIREYE_PROBES:
+        max_probes = max(1, settings.MIREYE_MAX_PROBES)
+        if n <= max_probes:
             return set(range(n))
 
         selected: Set[int] = set()
@@ -309,11 +307,12 @@ class SamplingService:
 
         pre_bsi_scores.sort(reverse=True)
         for pre_bsi, idx in pre_bsi_scores:
-            if len(selected) >= MAX_MIREYE_PROBES:
+            if len(selected) >= max_probes:
                 break
             selected.add(idx)
 
-        return selected
+        # Respect a lower configured budget without ever exceeding it.
+        return set(sorted(selected)[:max_probes])
 
     def _find_point_at_distance(
         self,

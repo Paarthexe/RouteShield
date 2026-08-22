@@ -10,6 +10,10 @@ export default function SampleInspector({ sample, onClose }) {
   const isMireyeProbed = sample.is_mireye_probed;
   const slopePct = sample.slope_pct;
   const hazardScore = sample.hazard_score;
+  const sources = Object.entries(mireye?.raw_fields || {})
+    .filter(([, field]) => field?.source)
+    .map(([name, field]) => ({ name, source: field.source, url: field.source_url }))
+    .slice(0, 8);
 
   return (
     <div className="bg-slate-900 border border-slate-700/80 rounded-xl p-4 shadow-2xl space-y-3 relative animate-fadeIn max-h-[520px] overflow-y-auto">
@@ -157,6 +161,22 @@ export default function SampleInspector({ sample, onClose }) {
                 </span>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {sources.length > 0 && (
+        <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 text-xs">
+          <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 font-mono">
+            <Layers className="h-3.5 w-3.5 text-cyan-400" /> Evidence sources
+          </div>
+          <div className="space-y-1.5">
+            {sources.map(({ name, source, url }) => (
+              <div key={name} className="flex items-center justify-between gap-3 text-[10px] font-mono">
+                <span className="truncate text-slate-400">{name.replaceAll('_', ' ')}</span>
+                {url ? <a href={url} target="_blank" rel="noreferrer" className="shrink-0 text-cyan-300 hover:text-cyan-200">{source}</a> : <span className="shrink-0 text-cyan-300">{source}</span>}
+              </div>
+            ))}
           </div>
         </div>
       )}

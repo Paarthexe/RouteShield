@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     # External Geocoding Credentials
     MIREYE_API_KEY: str = ""
     MIREYE_BASE_URL: str = "https://api.mireye.com/v1"
+    MIREYE_MAX_PROBES: int = 6
+    MIREYE_MAX_CONCURRENCY: int = 4
     
     # OSRM Routing Engine URL
     OSRM_BASE_URL: str = "http://router.project-osrm.org"

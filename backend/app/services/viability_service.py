@@ -14,6 +14,23 @@ REJECT_BSI_THRESHOLD = 3.5          # Catastrophic bottleneck threshold
 REJECT_HAZARD_EXPOSURE_PCT = 0.50   # > 50% of samples with hazard_score > 0.5 = auto-reject
 
 
+def risk_model_metadata() -> dict:
+    """Return the transparent scoring contract sent with every decision."""
+    return {
+        "version": "1.0",
+        "score_formula": {
+            "hazard_exposure_weight": W_HAZARD_EXPOSURE,
+            "bottleneck_penalty_weight": W_BOTTLENECK_PENALTY,
+            "travel_time_penalty_weight": W_TIME_DELTA,
+        },
+        "viability_gate": {
+            "catastrophic_bottleneck_bsi": REJECT_BSI_THRESHOLD,
+            "high_hazard_exposure_pct": REJECT_HAZARD_EXPOSURE_PCT * 100,
+        },
+        "interpretation": "Scores rank routes only after the explicit viability gate rejects critical corridors.",
+    }
+
+
 def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViability:
     """
     Calculate viability score (0-100) for a route and determine its status.

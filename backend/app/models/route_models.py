@@ -56,6 +56,16 @@ class RouteViability(BaseModel):
     rejection_reasons: List[str] = []
 
 
+class BackupIndependence(BaseModel):
+    primary_route_id: str
+    backup_route_id: str
+    corridor_overlap_pct: float
+    shared_bridge_ids: List[str] = []
+    independence_score: float
+    is_independent: bool
+    explanation: str
+
+
 class AgentStep(BaseModel):
     step_number: int
     action: str
@@ -70,6 +80,9 @@ class AgentDecision(BaseModel):
     trade_off_explanation: str = ""
     steps: List[AgentStep] = []
     mireye_insight: Optional[str] = None
+    backup_independence: Optional[BackupIndependence] = None
+    risk_model: Dict[str, Any] = {}
+    evidence_coverage: Dict[str, Any] = {}
 
 
 class Route(BaseModel):

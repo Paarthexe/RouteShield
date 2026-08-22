@@ -2,8 +2,10 @@ import logging
 from typing import List, Optional
 from app.models.route_models import Route, AgentDecision, AgentStep, Location
 from app.services.bottleneck_service import analyze_route_bottlenecks
-from app.services.viability_service import assess_route_viability, rank_routes
+from app.services.redundancy_service import select_independent_backup
+from app.services.viability_service import assess_route_viability, rank_routes, risk_model_metadata
 from app.services.mireye_service import mireye_data_service
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +65,16 @@ async def run_agent_analysis(
     ranked_routes = rank_routes(routes)
 
     primary = next((r for r in ranked_routes if r.viability and r.viability.status == "PRIMARY"), None)
-    backup = next((r for r in ranked_routes if r.viability and r.viability.status == "BACKUP"), None)
+    backup = None
+    backup_independence = None
+    if primary:
+        # A score-only runner-up is not necessarily a usable evacuation backup.
+        for route in ranked_routes:
+            if route.viability and route.viability.status in {"BACKUP", "ALTERNATIVE"}:
+                route.viability.status = "ALTERNATIVE"
+        backup, backup_independence = select_independent_backup(primary, ranked_routes)
+        if backup and backup.viability:
+            backup.viability.status = "BACKUP"
     rejected = [r for r in ranked_routes if r.viability and r.viability.status == "REJECTED"]
 
     ranking_detail = []
@@ -71,6 +82,10 @@ async def run_agent_analysis(
         ranking_detail.append(f"PRIMARY: {primary.route_id} (Score: {primary.viability.score:.0f})")
     if backup:
         ranking_detail.append(f"BACKUP: {backup.route_id} (Score: {backup.viability.score:.0f})")
+        if backup_independence:
+            ranking_detail.append(f"BACKUP INDEPENDENCE: {backup_independence.independence_score:.0f}/100")
+    elif backup_independence:
+        ranking_detail.append(f"NO INDEPENDENT BACKUP: {backup_independence.explanation}")
     for r in rejected:
         ranking_detail.append(f"REJECTED: {r.route_id} — {'; '.join(r.viability.rejection_reasons)}")
 
@@ -155,11 +170,33 @@ async def run_agent_analysis(
         executive_summary=executive_summary,
         trade_off_explanation=trade_off_explanation,
         steps=steps,
-        mireye_insight=mireye_insight
+        mireye_insight=mireye_insight,
+        backup_independence=backup_independence,
+        risk_model=risk_model_metadata(),
+        evidence_coverage=_build_evidence_coverage(routes),
     )
 
     logger.info(f"Agent Decision: Primary={decision.primary_route_id}, Backup={decision.backup_route_id}")
     return decision
+
+
+def _build_evidence_coverage(routes: List[Route]) -> dict:
+    samples = [sample for route in routes for sample in route.samples]
+    mireye_samples = [sample for sample in samples if sample.is_mireye_probed]
+    bridge_samples = [sample for sample in samples if sample.nbi_bridges]
+    source_names = set()
+    for sample in mireye_samples:
+        for field in (sample.mireye_data or {}).get("raw_fields", {}).values():
+            if isinstance(field, dict) and field.get("source"):
+                source_names.add(field["source"])
+    return {
+        "route_count": len(routes),
+        "sample_count": len(samples),
+        "mireye_probe_count": len(mireye_samples),
+        "bridge_evidence_sample_count": len(bridge_samples),
+        "sources": sorted(source_names),
+        "collection_policy": f"Open-Meteo elevation covers all samples; Mireye fetch targets up to {settings.MIREYE_MAX_PROBES} high-value samples per route with at most {settings.MIREYE_MAX_CONCURRENCY} concurrent requests; Mireye Ask is reserved for the single worst bottleneck.",
+    }
 
 
 
@@ -265,6 +302,8 @@ def _generate_executive_summary(
             f"Hazard exposure: {v.hazard_exposure_pct:.0f}% of corridor. "
             f"Bottlenecks: {v.bottleneck_count} total ({v.critical_bottleneck_count} critical)."
         )
+    else:
+        parts.append("NO VIABLE CORRIDOR: every evaluated route violated at least one configured viability rule. Review the rejected-route evidence before acting.")
 
     if backup and backup.viability:
         v = backup.viability
