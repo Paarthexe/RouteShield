@@ -248,7 +248,7 @@ export default function App() {
         <div className="lg:col-span-8 space-y-4">
 
           {analysisData && (
-            <DecisionReadout routes={analysisData.routes} selectedRoute={selectedRouteObj} />
+            <DecisionReadout routes={analysisData.routes} selectedRoute={selectedRouteObj} agentDecision={analysisData.agent_decision} />
           )}
           
           {/* Map Toolbar */}

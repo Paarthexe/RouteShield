@@ -1,12 +1,14 @@
 import React from 'react';
 import { ArrowUpRight, ShieldCheck, ShieldQuestion } from 'lucide-react';
 
-export default function DecisionReadout({ routes, selectedRoute }) {
+export default function DecisionReadout({ routes, selectedRoute, agentDecision }) {
   if (!routes?.length) return null;
   const fastest = routes.reduce((best, route) => route.travel_time_min < best.travel_time_min ? route : best, routes[0]);
   const route = selectedRoute || fastest;
   const extraMinutes = Math.max(0, Math.round((route.travel_time_min - fastest.travel_time_min) * 10) / 10);
   const evidenceCount = route.samples?.filter((sample) => sample.mireye_data || sample.nbi_bridges?.length || sample.hazards?.length).length || 0;
+  const hasDecision = Boolean(agentDecision);
+  const noViableRoute = hasDecision && !agentDecision.primary_route_id;
 
   return (
     <section className="rounded-xl border border-cyan-900/70 bg-gradient-to-br from-cyan-950/50 to-slate-900 p-4 shadow-lg shadow-cyan-950/20">
@@ -16,8 +18,8 @@ export default function DecisionReadout({ routes, selectedRoute }) {
         </div>
         <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-300 font-mono">Decision preview</p>
-          <h2 className="mt-1 text-base font-bold text-white">Evidence is ready for resilience analysis</h2>
-          <p className="mt-1 text-xs leading-relaxed text-slate-300">The current build identifies corridors and collects evidence. It does not yet declare a safe or primary evacuation route.</p>
+          <h2 className="mt-1 text-base font-bold text-white">{noViableRoute ? 'No viable corridor identified' : hasDecision ? 'Resilience decision available' : 'Evidence is ready for resilience analysis'}</h2>
+          <p className="mt-1 text-xs leading-relaxed text-slate-300">{noViableRoute ? 'Every evaluated corridor violated the configured viability gate. Review the rejected routes and their evidence before proceeding.' : hasDecision ? 'The recommendation is based on the deterministic route analysis and its evidence trace.' : 'The current build identifies corridors and collects evidence while the decision layer completes.'}</p>
         </div>
       </div>
       <div className="mt-4 grid grid-cols-3 gap-2">
@@ -35,8 +37,8 @@ export default function DecisionReadout({ routes, selectedRoute }) {
         </div>
       </div>
       <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-400">
-        <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-        <span>Recommendation language will unlock after viability rules and bottleneck detection are connected.</span>
+        <ShieldCheck className={`h-3.5 w-3.5 ${noViableRoute ? 'text-rose-400' : 'text-emerald-400'}`} />
+        <span>{noViableRoute ? 'No route is being presented as safe. The least-bad corridor remains available for review only.' : hasDecision ? 'Route status is derived from the viability gate and bottleneck analysis.' : 'Recommendation language will unlock after the decision engine returns.'}</span>
         <ArrowUpRight className="ml-auto h-3.5 w-3.5 text-slate-500" />
       </div>
     </section>

@@ -96,7 +96,8 @@ def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViab
 def rank_routes(routes: List[Route]) -> List[Route]:
     """
     Rank routes by viability score and assign PRIMARY / BACKUP / REJECTED status.
-    If all routes have severe bottlenecks, the agent recommends the least-vulnerable option.
+    If all routes are rejected, preserve the rejection gate. A rejected route
+    must never be relabeled as PRIMARY or BACKUP.
     """
     rejected = [r for r in routes if r.viability and r.viability.status == "REJECTED"]
     candidates = [r for r in routes if r.viability and r.viability.status != "REJECTED"]
@@ -113,12 +114,9 @@ def rank_routes(routes: List[Route]) -> List[Route]:
                 route.viability.status = "ALTERNATIVE"
         all_ranked = candidates + rejected
     else:
-        # Fallback if all corridors are hazardous: sort rejected routes by viability score
+        # No viable corridor exists. Keep every route REJECTED and sort only for
+        # display so the least-bad option can still be reviewed as a contingency.
         rejected.sort(key=lambda r: r.viability.score if r.viability else 0, reverse=True)
-        if rejected:
-            rejected[0].viability.status = "PRIMARY"
-            if len(rejected) > 1:
-                rejected[1].viability.status = "BACKUP"
         all_ranked = rejected
 
     return all_ranked

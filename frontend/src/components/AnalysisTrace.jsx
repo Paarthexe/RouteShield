@@ -14,6 +14,7 @@ export default function AnalysisTrace({ loading, analysisData, error }) {
   const hasEvidence = analysisData?.routes?.some((route) =>
     route.samples?.some((sample) => sample.mireye_data || sample.nbi_bridges?.length || sample.hazards?.length)
   );
+  const hasDecision = Boolean(analysisData?.agent_decision);
 
   const statusFor = (key) => {
     if (error && key === 'decision') return 'error';
@@ -23,7 +24,7 @@ export default function AnalysisTrace({ loading, analysisData, error }) {
     }
     if (key === 'resolve' || key === 'routes' || key === 'samples') return hasRoutes ? 'complete' : 'pending';
     if (key === 'evidence') return hasEvidence ? 'complete' : 'pending';
-    return 'pending';
+    return hasDecision ? 'complete' : 'pending';
   };
 
   return (
@@ -33,7 +34,7 @@ export default function AnalysisTrace({ loading, analysisData, error }) {
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400 font-mono">Analysis workflow</p>
           <p className="mt-1 text-xs text-slate-400">Traceable stages, no hidden reasoning</p>
         </div>
-        <span className="rounded border border-amber-800/70 bg-amber-950/40 px-2 py-1 text-[10px] font-mono text-amber-300">STAGE 1</span>
+        <span className="rounded border border-amber-800/70 bg-amber-950/40 px-2 py-1 text-[10px] font-mono text-amber-300">STAGE 2</span>
       </div>
       <ol className="space-y-2">
         {STEPS.map(([key, label], index) => {
@@ -51,7 +52,7 @@ export default function AnalysisTrace({ loading, analysisData, error }) {
         })}
       </ol>
       <p className="mt-3 border-t border-slate-800 pt-3 text-[11px] leading-relaxed text-slate-500">
-        Stage 2 decisioning is not active yet. RouteShield is showing collected route evidence so the next decision layer can be audited.
+        RouteShield exposes the deterministic evidence and decision trace so every recommendation—or no-viable-route result—can be audited.
       </p>
     </section>
   );
