@@ -14,8 +14,7 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if settings.MIREYE_API_KEY:
-        masked_key = settings.MIREYE_API_KEY[:8] + "..." if len(settings.MIREYE_API_KEY) > 8 else "***"
-        logging.info(f"Mireye API Key configured: {masked_key}")
+        logging.info("Mireye API key configured")
     else:
         logging.warning("Mireye API Key not detected in environment. Please configure MIREYE_API_KEY.")
     yield
