@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, useMap } from 'react-leaflet';
+import React, { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import { MapPin, Navigation, Compass, CheckCircle2 } from 'lucide-react';
 
 const ROUTE_LINE_COLORS = {
   route_1: '#06b6d4', // Cyan
@@ -36,6 +37,35 @@ const createCustomMarkerIcon = (label, colorBg, borderColor) => {
   });
 };
 
+const createBottleneckIcon = (severity) => {
+  const color = severity === 'Critical' ? '#ef4444' : '#f59e0b';
+  const size = severity === 'Critical' ? 24 : 20;
+  return L.divIcon({
+    className: 'bottleneck-marker',
+    html: `
+      <div style="
+        background-color: ${color}25;
+        border: 2px solid ${color};
+        color: ${color};
+        width: ${size}px;
+        height: ${size}px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 11px;
+        box-shadow: 0 0 10px ${color}80;
+        animation: pulse 2s infinite;
+      ">
+        !
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+};
+
 const originIcon = createCustomMarkerIcon('A', '#10b981', '#ffffff');
 const destinationIcon = createCustomMarkerIcon('B', '#f43f5e', '#ffffff');
 const bridgeIcon = createCustomMarkerIcon('≈', '#f59e0b', '#fde68a');
@@ -51,25 +81,86 @@ function MapBoundsAdjuster({ bounds }) {
   return null;
 }
 
+// Map Click Event Handler & Location Picker Component
+function MapClickHandler({ onSetOrigin, onSetDestination, onSetWaypoint, pickerMode, setPickerMode }) {
+  useMapEvents({
+    click(e) {
+      const { lat, lng } = e.latlng;
+      if (pickerMode === 'origin') {
+        onSetOrigin(lat, lng);
+        setPickerMode(null);
+      } else if (pickerMode === 'destination') {
+        onSetDestination(lat, lng);
+        setPickerMode(null);
+      } else if (pickerMode && pickerMode.startsWith('waypoint_')) {
+        const idx = parseInt(pickerMode.replace('waypoint_', ''), 10);
+        if (!isNaN(idx) && onSetWaypoint) {
+          onSetWaypoint(idx, lat, lng);
+        }
+        setPickerMode(null);
+      }
+    }
+  });
+
+  return null;
+}
+
+const parseCoordStr = (val) => {
+  if (!val) return null;
+  if (typeof val === 'object' && val.latitude && val.longitude) {
+    return { latitude: val.latitude, longitude: val.longitude, display_name: val.display_name || `${val.latitude.toFixed(4)}, ${val.longitude.toFixed(4)}` };
+  }
+  if (typeof val === 'string') {
+    const parts = val.split(',').map(s => parseFloat(s.trim()));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      return { latitude: parts[0], longitude: parts[1], display_name: `Point (${parts[0].toFixed(4)}, ${parts[1].toFixed(4)})` };
+    }
+  }
+  return null;
+};
+
 export default function MapView({
   origin,
   destination,
+  waypoints = [],
   routes,
   selectedRouteId,
   onSelectRoute,
   showSamples,
   selectedSample,
-  onSelectSample
+  onSelectSample,
+  onSetOrigin,
+  onSetDestination,
+  onSetWaypoint,
+  rawOriginStr,
+  rawDestinationStr,
+  rawWaypoints = [],
+  resolvedOrigin,
+  resolvedDestination,
+  resolvedWaypoints = [],
+  pickerMode,
+  setPickerMode
 }) {
+  const originObj = parseCoordStr(origin) || resolvedOrigin || parseCoordStr(rawOriginStr);
+  const destinationObj = parseCoordStr(destination) || resolvedDestination || parseCoordStr(rawDestinationStr);
+
+  const rawWpObjs = (waypoints.length > 0 ? waypoints : rawWaypoints).map(wp => parseCoordStr(wp));
+  const waypointObjs = rawWpObjs.map((obj, i) => obj || (resolvedWaypoints && resolvedWaypoints[i])).filter(Boolean);
+
   // Center fallback (San Francisco coordinates)
   const defaultCenter = [37.7749, -122.4194];
   const defaultZoom = 11;
 
-  // Calculate bounds if origin, destination or routes present
+  // Calculate bounds if origin, waypoints, destination or routes present
   let mapBounds = [];
-  if (origin && destination) {
-    mapBounds.push([origin.latitude, origin.longitude]);
-    mapBounds.push([destination.latitude, destination.longitude]);
+  if (originObj) {
+    mapBounds.push([originObj.latitude, originObj.longitude]);
+  }
+  waypointObjs.forEach(wp => {
+    mapBounds.push([wp.latitude, wp.longitude]);
+  });
+  if (destinationObj) {
+    mapBounds.push([destinationObj.latitude, destinationObj.longitude]);
   }
 
   if (routes && routes.length > 0) {
@@ -82,8 +173,17 @@ export default function MapView({
 
   const selectedRouteObj = routes.find(r => r.route_id === selectedRouteId) || routes[0];
 
+  // Construct preview path coordinates (Origin -> Waypoints -> Destination)
+  const previewPositions = [];
+  if (originObj) previewPositions.push([originObj.latitude, originObj.longitude]);
+  waypointObjs.forEach(wp => previewPositions.push([wp.latitude, wp.longitude]));
+  if (destinationObj) previewPositions.push([destinationObj.latitude, destinationObj.longitude]);
+
+  // Build bottleneck data for the selected route
+  const bottlenecks = selectedRouteObj?.bottlenecks || [];
+
   return (
-    <div className="relative w-full h-full min-h-[450px] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
+    <div className="relative w-full h-full min-h-[600px] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
       <MapContainer
         center={defaultCenter}
         zoom={defaultZoom}
@@ -98,44 +198,92 @@ export default function MapView({
 
         <MapBoundsAdjuster bounds={mapBounds.length > 0 ? mapBounds : null} />
 
-        {/* Origin Marker */}
-        {origin && (
+        {/* Map Click Picker Handler */}
+        <MapClickHandler
+          onSetOrigin={onSetOrigin}
+          onSetDestination={onSetDestination}
+          onSetWaypoint={onSetWaypoint}
+          pickerMode={pickerMode}
+          setPickerMode={setPickerMode}
+        />
+
+        {/* Dashed Preview Line between Origin -> Waypoints -> Destination before route generation */}
+        {previewPositions.length >= 2 && (!routes || routes.length === 0) && (
+          <Polyline
+            positions={previewPositions}
+            pathOptions={{
+              color: '#38bdf8',
+              weight: 2.5,
+              opacity: 0.7,
+              dashArray: '6, 8'
+            }}
+          />
+        )}
+
+        {/* Origin Marker (A) */}
+        {originObj && (
           <Marker
-            position={[origin.latitude, origin.longitude]}
-            icon={originIcon}
+            position={[originObj.latitude, originObj.longitude]}
+            icon={createCustomMarkerIcon('A', '#10b981', '#ffffff')}
           >
             <Popup>
               <div className="p-1 space-y-1 font-sans">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block font-mono">
-                  INCIDENT LOCATION (ORIGIN)
+                  INCIDENT LOCATION (ORIGIN A)
                 </span>
                 <p className="text-xs font-semibold text-slate-100">
-                  {origin.display_name}
+                  {originObj.display_name}
                 </p>
                 <span className="text-[10px] text-slate-400 font-mono block">
-                  {origin.latitude.toFixed(5)}, {origin.longitude.toFixed(5)}
+                  {originObj.latitude.toFixed(5)}, {originObj.longitude.toFixed(5)}
                 </span>
               </div>
             </Popup>
           </Marker>
         )}
 
-        {/* Destination Marker */}
-        {destination && (
+        {/* Intermediate Waypoint Markers (B, C, D...) */}
+        {waypointObjs.map((wp, idx) => {
+          const letter = String.fromCharCode(66 + idx);
+          return (
+            <Marker
+              key={idx}
+              position={[wp.latitude, wp.longitude]}
+              icon={createCustomMarkerIcon(letter, '#f59e0b', '#ffffff')}
+            >
+              <Popup>
+                <div className="p-1 space-y-1 font-sans">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block font-mono">
+                    INTERMEDIATE STOP ({letter})
+                  </span>
+                  <p className="text-xs font-semibold text-slate-100">
+                    {wp.display_name}
+                  </p>
+                  <span className="text-[10px] text-slate-400 font-mono block">
+                    {wp.latitude.toFixed(5)}, {wp.longitude.toFixed(5)}
+                  </span>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
+
+        {/* Destination Marker (B, C, D, E...) */}
+        {destinationObj && (
           <Marker
-            position={[destination.latitude, destination.longitude]}
-            icon={destinationIcon}
+            position={[destinationObj.latitude, destinationObj.longitude]}
+            icon={createCustomMarkerIcon(String.fromCharCode(66 + waypointObjs.length), '#f43f5e', '#ffffff')}
           >
             <Popup>
               <div className="p-1 space-y-1 font-sans">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-rose-400 block font-mono">
-                  EVACUATION DESTINATION
+                  EVACUATION DESTINATION ({String.fromCharCode(66 + waypointObjs.length)})
                 </span>
                 <p className="text-xs font-semibold text-slate-100">
-                  {destination.display_name}
+                  {destinationObj.display_name}
                 </p>
                 <span className="text-[10px] text-slate-400 font-mono block">
-                  {destination.latitude.toFixed(5)}, {destination.longitude.toFixed(5)}
+                  {destinationObj.latitude.toFixed(5)}, {destinationObj.longitude.toFixed(5)}
                 </span>
               </div>
             </Popup>
@@ -205,21 +353,31 @@ export default function MapView({
         {showSamples && selectedRouteObj && selectedRouteObj.samples && (
           selectedRouteObj.samples.map(sample => {
             const isSampleSelected = selectedSample && selectedSample.sample_id === sample.sample_id;
+            const isMireyeProbed = sample.is_mireye_probed;
+            const hazardScore = sample.hazard_score || 0;
             const distKm = (sample.distance_from_origin_m / 1000.0).toFixed(2);
+
+            // Color by hazard score
+            let fillColor = '#06b6d4'; // Default cyan
+            if (hazardScore > 0.5) fillColor = '#ef4444'; // Red
+            else if (hazardScore > 0.3) fillColor = '#f59e0b'; // Amber
+            else if (hazardScore > 0.1) fillColor = '#22d3ee'; // Light cyan
+
+            const radius = isSampleSelected ? 7 : isMireyeProbed ? 6 : 4;
 
             return (
               <CircleMarker
                 key={sample.sample_id}
                 center={[sample.latitude, sample.longitude]}
-                radius={isSampleSelected ? 7 : 4}
+                radius={radius}
                 eventHandlers={{
                   click: () => onSelectSample(sample)
                 }}
                 pathOptions={{
-                  fillColor: isSampleSelected ? '#38bdf8' : '#06b6d4',
+                  fillColor: isSampleSelected ? '#38bdf8' : fillColor,
                   fillOpacity: 0.9,
-                  color: isSampleSelected ? '#ffffff' : '#0f172a',
-                  weight: isSampleSelected ? 3 : 1.5
+                  color: isMireyeProbed ? '#10b981' : isSampleSelected ? '#ffffff' : '#0f172a',
+                  weight: isMireyeProbed ? 3 : isSampleSelected ? 3 : 1.5
                 }}
               >
                 <Popup>
@@ -230,34 +388,97 @@ export default function MapView({
                     <div className="font-bold text-slate-100">
                       Distance: <span className="text-cyan-300 font-mono">{distKm} km</span>
                     </div>
-                    <div className="text-[10px] text-slate-400 font-mono">
-                      {sample.latitude.toFixed(5)}, {sample.longitude.toFixed(5)}
-                    </div>
+                    {isMireyeProbed && (
+                      <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700 font-mono inline-block">
+                        Mireye Sample
+                      </span>
+                    )}
+                    {hazardScore > 0 && (
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        Hazard Score: <span className={hazardScore > 0.3 ? 'text-amber-400 font-bold' : 'text-slate-300'}>{hazardScore.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {sample.slope_pct != null && (
+                      <div className="text-[10px] text-slate-400 font-mono">
+                        Slope: <span className={Math.abs(sample.slope_pct) > 8 ? 'text-rose-400 font-bold' : 'text-slate-300'}>{sample.slope_pct.toFixed(1)}%</span>
+                      </div>
+                    )}
                   </div>
                 </Popup>
               </CircleMarker>
             );
           })
         )}
+
+        {/* Bottleneck Warning Markers */}
+        {showSamples && bottlenecks.map((bn, idx) => (
+          <Marker
+            key={`bn-${idx}`}
+            position={[bn.latitude, bn.longitude]}
+            icon={createBottleneckIcon(bn.severity_label)}
+          >
+            <Popup>
+              <div className="p-1 space-y-1 font-sans text-xs max-w-[220px]">
+                <span className={`text-[10px] font-bold uppercase font-mono block ${
+                  bn.severity_label === 'Critical' ? 'text-rose-400' : 'text-amber-400'
+                }`}>
+                  {bn.severity_label} Bottleneck
+                </span>
+                <div className="text-[10px] text-slate-300 font-mono">
+                  BSI: <span className="font-bold">{bn.bsi_score.toFixed(2)}</span>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  {bn.description}
+                </p>
+                <div className="text-[9px] text-slate-500 font-mono">
+                  {(bn.distance_from_origin_m / 1000).toFixed(1)} km from origin
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
 
-      {/* Legend & Controls Overlay */}
-      <div className="absolute bottom-4 left-4 z-20 glass-panel p-3 rounded-xl border border-slate-800 text-xs shadow-xl max-w-xs space-y-2">
-        <div className="flex items-center justify-between font-mono font-bold text-[11px] text-slate-300 uppercase">
-          <span>CORRIDOR LEGEND</span>
-        </div>
-        <div className="space-y-1 text-[11px]">
-          {routes.map((route, index) => (
-            <div key={route.route_id} className="flex items-center space-x-2">
-              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: ROUTE_LINE_COLORS[route.route_id] || '#06b6d4' }}></span>
-              <span className={route.route_id === selectedRouteId ? 'text-slate-100' : 'text-slate-400'}>{route.tag || `Corridor ${index + 1}`}{route.route_id === selectedRouteId ? ' · selected' : ''}</span>
+      {/* Legend & Controls Overlay - ONLY SHOWN IF ROUTES ARE PRESENT */}
+      {routes && routes.length > 0 && (
+        <div className="absolute bottom-4 left-4 z-20 glass-panel p-3 rounded-xl border border-slate-800 text-xs shadow-xl max-w-xs space-y-2">
+          <div className="flex items-center justify-between font-mono font-bold text-[11px] text-slate-300 uppercase">
+            <span>CORRIDOR LEGEND</span>
+          </div>
+          <div className="space-y-1 text-[11px]">
+            {routes.map((route, index) => (
+              <div key={route.route_id} className="flex items-center space-x-2">
+                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: ROUTE_LINE_COLORS[route.route_id] || '#06b6d4' }}></span>
+                <span className={route.route_id === selectedRouteId ? 'text-slate-100' : 'text-slate-400'}>{route.tag || `Corridor ${index + 1}`}{route.route_id === selectedRouteId ? ' · selected' : ''}</span>
+              </div>
+            ))}
+            {selectedRouteObj?.samples?.some((sample) => sample.nbi_bridges?.length) && (
+              <div className="flex items-center space-x-2"><span className="flex h-3 w-3 items-center justify-center rounded-full bg-amber-500 text-[8px] text-slate-950">≈</span><span className="text-slate-300">NBI bridge evidence</span></div>
+            )}
+          </div>
+          {/* Hazard color key */}
+          <div className="border-t border-slate-800 pt-1 space-y-1 text-[10px]">
+            <div className="flex items-center space-x-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+              <span className="text-slate-400">Low Risk Sample</span>
             </div>
-          ))}
-          {selectedRouteObj?.samples?.some((sample) => sample.nbi_bridges?.length) && (
-            <div className="flex items-center space-x-2"><span className="flex h-3 w-3 items-center justify-center rounded-full bg-amber-500 text-[8px] text-slate-950">≈</span><span className="text-slate-300">NBI bridge evidence</span></div>
-          )}
+            <div className="flex items-center space-x-2">
+              <span className="h-2 w-2 rounded-full bg-amber-500"></span>
+              <span className="text-slate-400">Moderate Hazard</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="h-2 w-2 rounded-full bg-rose-500"></span>
+              <span className="text-slate-400">High Hazard</span>
+            </div>
+            {bottlenecks.length > 0 && (
+              <div className="flex items-center space-x-2">
+                <span className="h-3 w-3 rounded-sm bg-rose-500/20 border border-rose-500 text-[9px] font-bold flex items-center justify-center text-rose-400">!</span>
+                <span className="text-slate-400">Bottleneck ({bottlenecks.length})</span>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
