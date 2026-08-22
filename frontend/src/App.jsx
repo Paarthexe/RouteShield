@@ -8,7 +8,10 @@ import ErrorNotice from './components/ErrorNotice';
 import AgentBriefing from './components/AgentBriefing';
 import ElevationProfile from './components/ElevationProfile';
 import { analyzeRoutes, resolveLocation } from './services/api';
-import { Layers, Eye, EyeOff, Compass, ChevronLeft, ChevronRight, Sliders } from 'lucide-react';
+import { Eye, EyeOff, Compass, Info } from 'lucide-react';
+import AnalysisTrace from './components/AnalysisTrace';
+import DecisionReadout from './components/DecisionReadout';
+import RouteComparison from './components/RouteComparison';
 
 export default function App() {
   const [origin, setOrigin] = useState('');
@@ -153,6 +156,8 @@ export default function App() {
             setPickerMode={setPickerMode}
           />
 
+          <AnalysisTrace loading={loading} analysisData={analysisData} error={error} />
+
           {error && (
             <ErrorNotice
               message={error}
@@ -241,6 +246,10 @@ export default function App() {
 
         {/* Right Column: Tactical Map, Terrain Elevation & Sample Inspector (8 cols on lg) */}
         <div className="lg:col-span-8 space-y-4">
+
+          {analysisData && (
+            <DecisionReadout routes={analysisData.routes} selectedRoute={selectedRouteObj} agentDecision={analysisData.agent_decision} />
+          )}
           
           {/* Map Toolbar */}
           <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-md">
@@ -317,6 +326,22 @@ export default function App() {
               onClose={() => setSelectedSample(null)}
             />
           )}
+
+          {analysisData && (
+            <RouteComparison
+              routes={analysisData.routes}
+              selectedRouteId={selectedRouteId}
+              onSelectRoute={(id) => {
+                setSelectedRouteId(id);
+                setSelectedSample(null);
+              }}
+            />
+          )}
+
+          <div className="flex items-start gap-2 rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-3 text-[11px] leading-relaxed text-slate-500">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <span>Decision-support prototype: route conditions can change during an active emergency. Current results are based on the configured routing and physical-world data sources and are not an official dispatch instruction.</span>
+          </div>
 
         </div>
       </main>

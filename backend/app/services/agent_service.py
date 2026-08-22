@@ -142,11 +142,14 @@ async def run_agent_analysis(
     steps.append(AgentStep(
         step_number=step_num,
         action="Decision Finalized",
-        detail=f"Selected {primary.route_id if primary else 'N/A'} as primary evacuation corridor"
+        detail=(
+            f"Selected {primary.route_id} as primary evacuation corridor"
+            if primary else "No viable evacuation corridor identified"
+        )
     ))
 
     decision = AgentDecision(
-        primary_route_id=primary.route_id if primary else (routes[0].route_id if routes else None),
+        primary_route_id=primary.route_id if primary else None,
         backup_route_id=backup.route_id if backup else None,
         rejected_route_ids=[r.route_id for r in rejected],
         executive_summary=executive_summary,

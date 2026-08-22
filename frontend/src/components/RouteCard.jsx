@@ -46,13 +46,13 @@ function ViabilityGauge({ score }) {
 
 export default function RouteCard({ route, isSelected, onSelect, fastestDuration }) {
   const colorScheme = ROUTE_COLORS[route.route_id] || ROUTE_COLORS.route_1;
-  const isFastest = route.route_id === 'route_1';
+  const isFastest = route.travel_time_min === fastestDuration;
   const viability = route.viability;
   const statusKey = viability?.status || 'CANDIDATE';
   const statusCfg = STATUS_CONFIG[statusKey] || STATUS_CONFIG.CANDIDATE;
 
-  const timeDiffMin = !isFastest && fastestDuration 
-    ? Math.round(route.travel_time_min - fastestDuration)
+  const timeDiffMin = !isFastest && fastestDuration !== undefined
+    ? Math.round((route.travel_time_min - fastestDuration) * 10) / 10
     : 0;
 
   return (

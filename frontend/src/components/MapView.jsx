@@ -68,6 +68,7 @@ const createBottleneckIcon = (severity) => {
 
 const originIcon = createCustomMarkerIcon('A', '#10b981', '#ffffff');
 const destinationIcon = createCustomMarkerIcon('B', '#f43f5e', '#ffffff');
+const bridgeIcon = createCustomMarkerIcon('≈', '#f59e0b', '#fde68a');
 
 // Map view bounds adjuster component
 function MapBoundsAdjuster({ bounds }) {
@@ -330,7 +331,25 @@ export default function MapView({
           );
         })}
 
-        {/* Render Physical Distance Samples */}
+        {/* Render infrastructure evidence associated with samples */}
+        {selectedRouteObj?.samples?.flatMap((sample) => (sample.nbi_bridges || []).map((bridge, index) => ({ sample, bridge, index }))).map(({ sample, bridge, index }) => (
+          <Marker
+            key={`${sample.sample_id}-bridge-${bridge.structure_id || index}`}
+            position={[bridge.latitude ?? sample.latitude, bridge.longitude ?? sample.longitude]}
+            icon={bridgeIcon}
+          >
+            <Popup>
+              <div className="space-y-1 p-1 text-xs">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-300 font-mono">FHWA NBI infrastructure</span>
+                <strong className="block text-slate-100">{bridge.structure_id || 'Bridge record'}</strong>
+                <span className="block text-slate-400">{bridge.condition_label || 'Condition not classified'}</span>
+                <span className="block text-[10px] text-slate-500">Associated near {sample.sample_id}</span>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
+        {/* Render physical distance samples */}
         {showSamples && selectedRouteObj && selectedRouteObj.samples && (
           selectedRouteObj.samples.map(sample => {
             const isSampleSelected = selectedSample && selectedSample.sample_id === sample.sample_id;
@@ -427,21 +446,14 @@ export default function MapView({
             <span>CORRIDOR LEGEND</span>
           </div>
           <div className="space-y-1 text-[11px]">
-            <div className="flex items-center space-x-2">
-              <span className="h-3 w-3 rounded-full bg-cyan-500 shadow-sm shadow-cyan-500/50"></span>
-              <span className="text-slate-200">Route 1 (Primary / Fastest)</span>
-            </div>
-            {routes.length > 1 && (
-              <div className="flex items-center space-x-2">
-                <span className="h-3 w-3 rounded-full bg-purple-500 shadow-sm shadow-purple-500/50"></span>
-                <span className="text-slate-300">Route 2 (Alternative 1)</span>
+            {routes.map((route, index) => (
+              <div key={route.route_id} className="flex items-center space-x-2">
+                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: ROUTE_LINE_COLORS[route.route_id] || '#06b6d4' }}></span>
+                <span className={route.route_id === selectedRouteId ? 'text-slate-100' : 'text-slate-400'}>{route.tag || `Corridor ${index + 1}`}{route.route_id === selectedRouteId ? ' · selected' : ''}</span>
               </div>
-            )}
-            {routes.length > 2 && (
-              <div className="flex items-center space-x-2">
-                <span className="h-3 w-3 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50"></span>
-                <span className="text-slate-300">Route 3 (Alternative 2)</span>
-              </div>
+            ))}
+            {selectedRouteObj?.samples?.some((sample) => sample.nbi_bridges?.length) && (
+              <div className="flex items-center space-x-2"><span className="flex h-3 w-3 items-center justify-center rounded-full bg-amber-500 text-[8px] text-slate-950">≈</span><span className="text-slate-300">NBI bridge evidence</span></div>
             )}
           </div>
           {/* Hazard color key */}

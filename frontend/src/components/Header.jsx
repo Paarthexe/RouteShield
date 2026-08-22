@@ -14,9 +14,12 @@ export default function Header() {
               ROUTESHIELD
             </h1>
             <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase bg-zinc-900 text-zinc-300 border border-zinc-700/60 rounded">
-              Corridor Risk Engine
+              Evidence → Resilience → Decision
             </span>
           </div>
+          <p className="text-xs text-zinc-400 font-medium">
+            Evacuation resilience analysis workspace
+          </p>
         </div>
       </div>
 
