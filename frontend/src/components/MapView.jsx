@@ -331,25 +331,7 @@ export default function MapView({
           );
         })}
 
-        {/* Render infrastructure evidence associated with samples */}
-        {selectedRouteObj?.samples?.flatMap((sample) => (sample.nbi_bridges || []).map((bridge, index) => ({ sample, bridge, index }))).map(({ sample, bridge, index }) => (
-          <Marker
-            key={`${sample.sample_id}-bridge-${bridge.structure_id || index}`}
-            position={[bridge.latitude ?? sample.latitude, bridge.longitude ?? sample.longitude]}
-            icon={bridgeIcon}
-          >
-            <Popup>
-              <div className="space-y-1 p-1 text-xs">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-300 font-mono">FHWA NBI infrastructure</span>
-                <strong className="block text-slate-100">{bridge.structure_id || 'Bridge record'}</strong>
-                <span className="block text-slate-400">{bridge.condition_label || 'Condition not classified'}</span>
-                <span className="block text-[10px] text-slate-500">Associated near {sample.sample_id}</span>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-
-        {/* Render physical distance samples */}
+        {/* Render physical distance samples as sleek, tactical points */}
         {showSamples && selectedRouteObj && selectedRouteObj.samples && (
           selectedRouteObj.samples.map(sample => {
             const isSampleSelected = selectedSample && selectedSample.sample_id === sample.sample_id;
@@ -357,13 +339,13 @@ export default function MapView({
             const hazardScore = sample.hazard_score || 0;
             const distKm = (sample.distance_from_origin_m / 1000.0).toFixed(2);
 
-            // Color by hazard score
+            // Subtle color coding by hazard score
             let fillColor = '#06b6d4'; // Default cyan
             if (hazardScore > 0.5) fillColor = '#ef4444'; // Red
             else if (hazardScore > 0.3) fillColor = '#f59e0b'; // Amber
             else if (hazardScore > 0.1) fillColor = '#22d3ee'; // Light cyan
 
-            const radius = isSampleSelected ? 7 : isMireyeProbed ? 6 : 4;
+            const radius = isSampleSelected ? 6 : isMireyeProbed ? 5 : 3;
 
             return (
               <CircleMarker
@@ -374,10 +356,10 @@ export default function MapView({
                   click: () => onSelectSample(sample)
                 }}
                 pathOptions={{
-                  fillColor: isSampleSelected ? '#38bdf8' : fillColor,
-                  fillOpacity: 0.9,
-                  color: isMireyeProbed ? '#10b981' : isSampleSelected ? '#ffffff' : '#0f172a',
-                  weight: isMireyeProbed ? 3 : isSampleSelected ? 3 : 1.5
+                  fillColor: isSampleSelected ? '#38bdf8' : isMireyeProbed ? '#10b981' : fillColor,
+                  fillOpacity: isMireyeProbed ? 1.0 : 0.75,
+                  color: isSampleSelected ? '#ffffff' : isMireyeProbed ? '#047857' : '#0f172a',
+                  weight: isSampleSelected ? 2.5 : isMireyeProbed ? 2 : 1
                 }}
               >
                 <Popup>
@@ -390,7 +372,7 @@ export default function MapView({
                     </div>
                     {isMireyeProbed && (
                       <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700 font-mono inline-block">
-                        Mireye Sample
+                        Mireye Probed
                       </span>
                     )}
                     {hazardScore > 0 && (
@@ -410,33 +392,49 @@ export default function MapView({
           })
         )}
 
-        {/* Bottleneck Warning Markers */}
-        {showSamples && bottlenecks.map((bn, idx) => (
-          <Marker
-            key={`bn-${idx}`}
-            position={[bn.latitude, bn.longitude]}
-            icon={createBottleneckIcon(bn.severity_label)}
-          >
-            <Popup>
-              <div className="p-1 space-y-1 font-sans text-xs max-w-[220px]">
-                <span className={`text-[10px] font-bold uppercase font-mono block ${
-                  bn.severity_label === 'Critical' ? 'text-rose-400' : 'text-amber-400'
-                }`}>
-                  {bn.severity_label} Bottleneck
-                </span>
-                <div className="text-[10px] text-slate-300 font-mono">
-                  BSI: <span className="font-bold">{bn.bsi_score.toFixed(2)}</span>
+        {/* Peak Bottleneck Markers (Top Critical Chokepoints Only - Spaced >= 5km) */}
+        {showSamples && (() => {
+          const criticalBns = (selectedRouteObj?.bottlenecks || [])
+            .filter(bn => bn.severity_label === 'Critical' || bn.bsi_score >= 0.70)
+            .sort((a, b) => b.bsi_score - a.bsi_score);
+
+          // Deduplicate spatially so we only show top distinct chokepoints
+          const distinctBns = [];
+          for (const bn of criticalBns) {
+            const isNear = distinctBns.some(
+              d => Math.hypot(d.latitude - bn.latitude, d.longitude - bn.longitude) < 0.04
+            );
+            if (!isNear && distinctBns.length < 5) {
+              distinctBns.push(bn);
+            }
+          }
+
+          return distinctBns.map((bn, idx) => (
+            <Marker
+              key={`peak-bn-${idx}`}
+              position={[bn.latitude, bn.longitude]}
+              icon={createBottleneckIcon(bn.severity_label)}
+            >
+              <Popup>
+                <div className="p-1 space-y-1 font-sans text-xs max-w-[220px]">
+                  <span className="text-[10px] font-bold uppercase font-mono text-rose-400 block">
+                    Critical Bottleneck
+                  </span>
+                  <div className="text-[10px] text-slate-300 font-mono">
+                    BSI: <span className="font-bold text-rose-400">{bn.bsi_score.toFixed(2)}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    {bn.description}
+                  </p>
+                  <div className="text-[9px] text-slate-500 font-mono">
+                    {(bn.distance_from_origin_m / 1000).toFixed(1)} km from origin
+                  </div>
                 </div>
-                <p className="text-[10px] text-slate-400 leading-relaxed">
-                  {bn.description}
-                </p>
-                <div className="text-[9px] text-slate-500 font-mono">
-                  {(bn.distance_from_origin_m / 1000).toFixed(1)} km from origin
-                </div>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+              </Popup>
+            </Marker>
+          ));
+        })()}
+
       </MapContainer>
 
       {/* Legend & Controls Overlay - ONLY SHOWN IF ROUTES ARE PRESENT */}

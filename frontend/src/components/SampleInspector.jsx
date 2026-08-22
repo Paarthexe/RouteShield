@@ -166,55 +166,116 @@ export default function SampleInspector({ sample, onClose }) {
         <div className="space-y-2 pt-1">
           <div className="flex items-center justify-between">
             <h5 className="text-[11px] font-bold text-amber-400 font-mono uppercase tracking-wider flex items-center gap-1.5">
-              <Layers className="h-3.5 w-3.5 text-amber-400" /> FHWA National Bridge Inventory ({bridges.length})
+              <Layers className="h-3.5 w-3.5 text-amber-400" /> FHWA Bridge & Infrastructure ({bridges.length})
             </h5>
             <span className="text-[10px] bg-amber-950 text-amber-300 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono">
-              NBI Data
+              NBI Multi-Component
             </span>
           </div>
 
           <div className="space-y-2">
-            {bridges.map((b, idx) => (
-              <div
-                key={b.structure_id + idx}
-                className="bg-slate-950 border border-slate-800 p-3 rounded-lg text-xs space-y-1.5"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="text-[10px] font-mono text-cyan-400 block font-bold">
-                      NBI Structure ID: {b.structure_id}
-                    </span>
-                    <h6 className="font-bold text-slate-100 text-xs">
-                      {b.location || b.facility || 'Highway Overpass/Bridge'}
-                    </h6>
-                  </div>
-                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
-                    b.condition_label.includes('Poor')
-                      ? 'bg-rose-950 text-rose-300 border-rose-800'
-                      : b.condition_label.includes('Fair')
-                      ? 'bg-amber-950 text-amber-300 border-amber-800'
-                      : 'bg-emerald-950 text-emerald-300 border-emerald-800'
-                  }`}>
-                    {b.condition_label}
-                  </span>
-                </div>
+            {bridges.map((b, idx) => {
+              const isDeficient = b.structurally_deficient || b.condition_label?.includes('Poor') || b.condition_label?.includes('Deficient');
+              const suff = b.sufficiency_rating;
 
-                <div className="grid grid-cols-3 gap-2 text-[11px] pt-1 border-t border-slate-800/80 font-mono text-slate-300">
-                  <div>
-                    <span className="text-[9px] text-slate-400 block uppercase">Built</span>
-                    <span>{b.year_built || 'N/A'} {b.age_years ? `(${b.age_years}y)` : ''}</span>
+              return (
+                <div
+                  key={b.structure_id + idx}
+                  className="bg-slate-950 border border-slate-800 p-3 rounded-lg text-xs space-y-2"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="text-[10px] font-mono text-cyan-400 block font-bold">
+                        NBI Structure ID: {b.structure_id}
+                      </span>
+                      <h6 className="font-bold text-slate-100 text-xs">
+                        {b.location || b.facility || 'Highway Bridge / Overpass'}
+                      </h6>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                        isDeficient
+                          ? 'bg-rose-950 text-rose-300 border-rose-800'
+                          : b.condition_label?.includes('Fair')
+                          ? 'bg-amber-950 text-amber-300 border-amber-800'
+                          : 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                      }`}>
+                        {b.condition_label}
+                      </span>
+                      {isDeficient && (
+                        <span className="text-[9px] font-mono uppercase font-bold text-rose-400 bg-rose-950/80 px-1.5 py-0.5 rounded border border-rose-800/80">
+                          ⚠ Structurally Deficient
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[9px] text-slate-400 block uppercase">Daily Traffic</span>
-                    <span>{b.adt ? b.adt.toLocaleString() : 'N/A'} ADT</span>
+
+                  {/* Sufficiency Rating Bar (0-100) */}
+                  {suff != null && (
+                    <div className="bg-slate-900/90 p-2 rounded border border-slate-800 space-y-1">
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-slate-400">Sufficiency Rating (Item 66)</span>
+                        <span className={`font-bold ${suff < 50 ? 'text-rose-400' : suff < 75 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                          {suff.toFixed(1)} / 100
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                            suff < 50 ? 'bg-rose-500' : suff < 75 ? 'bg-amber-500' : 'bg-emerald-500'
+                          }`}
+                          style={{ width: `${Math.max(5, Math.min(100, suff))}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 5-Component Condition Rating Grid (Items 58-62) */}
+                  <div className="grid grid-cols-5 gap-1 pt-1 text-center font-mono">
+                    {[
+                      { label: 'Deck (58)', val: b.deck_condition },
+                      { label: 'Super (59)', val: b.super_condition },
+                      { label: 'Sub (60)', val: b.sub_condition },
+                      { label: 'Channel (61)', val: b.channel_condition },
+                      { label: 'Culvert (62)', val: b.culvert_condition }
+                    ].map((comp, cIdx) => {
+                      const num = parseInt(comp.val, 10);
+                      const isNum = !isNaN(num);
+                      const colorClass = !isNum
+                        ? 'text-slate-500 bg-slate-900/50'
+                        : num <= 4
+                        ? 'text-rose-400 bg-rose-950/40 border-rose-800/60'
+                        : num <= 6
+                        ? 'text-amber-400 bg-amber-950/40 border-amber-800/60'
+                        : 'text-emerald-400 bg-emerald-950/40 border-emerald-800/60';
+
+                      return (
+                        <div key={cIdx} className={`p-1 rounded border border-slate-800/80 ${colorClass}`}>
+                          <span className="text-[8px] text-slate-400 block truncate">{comp.label}</span>
+                          <span className="text-[11px] font-bold block">{comp.val || '—'}</span>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div>
-                    <span className="text-[9px] text-slate-400 block uppercase">Proximity</span>
-                    <span>{b.distance_to_sample_m}m</span>
+
+                  {/* Structure Metadata Row */}
+                  <div className="grid grid-cols-3 gap-2 text-[11px] pt-1.5 border-t border-slate-800/80 font-mono text-slate-300">
+                    <div>
+                      <span className="text-[9px] text-slate-400 block uppercase">Built</span>
+                      <span>{b.year_built || 'N/A'} {b.age_years ? `(${b.age_years}y)` : ''}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 block uppercase">Daily Traffic</span>
+                      <span>{b.adt ? b.adt.toLocaleString() : 'N/A'} ADT</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 block uppercase">Proximity</span>
+                      <span>{b.distance_to_sample_m}m</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ) : (
@@ -223,6 +284,7 @@ export default function SampleInspector({ sample, onClose }) {
           <span>No NBI bridge or highway structures within 300m of this sample point.</span>
         </div>
       )}
+
     </div>
   );
 }

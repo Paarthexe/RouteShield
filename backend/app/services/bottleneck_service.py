@@ -4,15 +4,17 @@ from app.models.route_models import Route, RouteSample, BottleneckInfo
 
 logger = logging.getLogger(__name__)
 
-# BSI thresholds
-BSI_CRITICAL = 0.65
-BSI_MODERATE = 0.35
+# BSI thresholds (calibrated for real-world corridor evaluation)
+BSI_CRITICAL = 0.70
+BSI_MODERATE = 0.40
 
 
 def _bridge_vulnerability(sample: RouteSample) -> float:
     """
-    Compute bridge vulnerability score for a sample point.
-    Returns 0.0 (no bridge) to 2.0 (poor condition bridge).
+    Compute bridge vulnerability score for a sample point across all FHWA NBI
+    component ratings (Item 58 Deck, 59 Superstructure, 60 Substructure,
+    61 Channel Scour, 62 Culvert) plus Sufficiency Rating (Item 66).
+    Returns 0.0 (no bridge) to 2.2 (critically deficient structure).
     """
     bridges = sample.nbi_bridges or []
     if not bridges:
@@ -23,55 +25,73 @@ def _bridge_vulnerability(sample: RouteSample) -> float:
         deck = str(b.get("deck_condition", "")).strip()
         super_cond = str(b.get("super_condition", "")).strip()
         sub_cond = str(b.get("sub_condition", "")).strip()
+        channel_cond = str(b.get("channel_condition", "")).strip()
+        culvert_cond = str(b.get("culvert_condition", "")).strip()
 
-        # Normalize condition codes to numeric (0-9, higher = better)
-        def parse_cond(val: str) -> float:
+        # Parse numeric ratings (0-9)
+        def parse_cond(val: str) -> Optional[float]:
             if val.isdigit():
                 return float(val)
-            return 5.0  # unknown defaults to fair
+            return None
 
-        deck_val = parse_cond(deck)
-        super_val = parse_cond(super_cond)
-        sub_val = parse_cond(sub_cond)
+        ratings = [
+            parse_cond(deck),
+            parse_cond(super_cond),
+            parse_cond(sub_cond),
+            parse_cond(channel_cond),
+            parse_cond(culvert_cond)
+        ]
+        valid_ratings = [r for r in ratings if r is not None]
 
-        # Use worst of the three conditions
-        min_cond = min(deck_val, super_val, sub_val)
+        # Use worst component rating (standard FHWA structural deficiency criterion)
+        min_cond = min(valid_ratings) if valid_ratings else 6.0
 
-        # Age penalty
+        # Age penalty (for structures built >45 or >60 years ago)
         age = b.get("age_years")
         age_penalty = 0.0
-        if age is not None:
+        if age is not None and min_cond <= 6:
             if age > 60:
-                age_penalty = 0.4
-            elif age > 40:
-                age_penalty = 0.2
+                age_penalty = 0.3
+            elif age > 45:
+                age_penalty = 0.15
 
-        if min_cond <= 4:
-            vuln = 2.0 + age_penalty  # Poor
+        # Sufficiency Rating penalty (Item 66, 0-100 scale)
+        suff = b.get("sufficiency_rating")
+        suff_penalty = 0.0
+        if suff is not None:
+            if suff < 50.0:
+                suff_penalty = 0.3  # Ineligible for federal repair / severe deficiency
+            elif suff < 75.0:
+                suff_penalty = 0.15
+
+        if min_cond <= 4 or b.get("structurally_deficient") is True:
+            vuln = 1.8 + age_penalty + suff_penalty  # Poor / Structurally Deficient
         elif min_cond <= 6:
-            vuln = 1.0 + age_penalty  # Fair
+            vuln = 0.7 + age_penalty + suff_penalty  # Fair
         elif min_cond <= 9:
-            vuln = 0.2  # Good
+            vuln = 0.1  # Good condition
         else:
-            vuln = 0.5  # Unknown
+            vuln = 0.3  # Serviceable / Enclosed Culvert
 
         worst = max(worst, vuln)
 
-    return min(worst, 2.5)  # Cap at 2.5
+    return min(worst, 2.2)  # Cap at 2.2
+
 
 
 def _terrain_penalty(slope_pct: float) -> float:
     """
     Terrain penalty based on slope grade.
-    Flat (0-3%) = 1.0, moderate (3-8%) = 1.2, steep (8-15%) = 1.5, extreme (>15%) = 1.8
+    Flat / standard highway grade (0-6%) = 1.0, moderate grade (6-10%) = 1.15,
+    steep mountain grade (10-18%) = 1.4, extreme grade (>18%) = 1.7
     """
     abs_slope = abs(slope_pct) if slope_pct is not None else 0.0
-    if abs_slope > 15.0:
-        return 1.8
-    elif abs_slope > 8.0:
-        return 1.5
-    elif abs_slope > 3.0:
-        return 1.2
+    if abs_slope > 18.0:
+        return 1.7
+    elif abs_slope > 10.0:
+        return 1.4
+    elif abs_slope > 6.0:
+        return 1.15
     return 1.0
 
 
@@ -79,8 +99,8 @@ def _hazard_risk(sample: RouteSample) -> float:
     """
     Compute hazard risk score for a sample [0.0 - 1.0].
 
-    Uses all confirmed Mireye natural_hazard fields with explicit, calibrated
-    weights rather than the old generic raw_fields keyword loop.
+    Uses confirmed Mireye natural_hazard fields with calibrated
+    weights avoiding false alarms on standard road geography.
     """
     risk = 0.0
     mireye = sample.mireye_data or {}
@@ -98,44 +118,47 @@ def _hazard_risk(sample: RouteSample) -> float:
         elif pga >= 0.1:
             risk += 0.05
 
-    # ---- Slope / terrain (0–0.30) ----
+    # ---- Slope / terrain (0–0.25) ----
     # slope_pct is computed from Open-Meteo DEM (all samples);
     # slope_degrees may also be present from Mireye USGS 3DEP.
     slope = sample.slope_pct
     if slope is None:
-        # Convert Mireye slope_degrees → approximate grade pct
         slope_deg = mireye.get("slope_degrees")
         if slope_deg is not None:
             import math
             slope = math.tan(math.radians(slope_deg)) * 100.0
     if slope is not None:
         abs_slope = abs(slope)
-        if abs_slope > 15.0:
-            risk += 0.30
-        elif abs_slope > 8.0:
-            risk += 0.20
-        elif abs_slope > 5.0:
-            risk += 0.10
+        if abs_slope > 18.0:
+            risk += 0.25
+        elif abs_slope > 12.0:
+            risk += 0.15
+        elif abs_slope > 7.0:
+            risk += 0.08
 
-    # ---- Elevation / coastal flood (0–0.30) ----
+    # ---- Elevation / coastal flood (0–0.25) ----
     elev = mireye.get("elevation_m")
     if elev is not None:
-        if elev < 5.0:
-            risk += 0.30   # Coastal / tidal flood zone
-        elif elev < 20.0:
-            risk += 0.20   # Low-lying flood plain
-        elif elev < 50.0:
-            risk += 0.05
+        is_coastal = (
+            (mireye.get("coast_distance_m") is not None and mireye.get("coast_distance_m") < 20000)
+            or mireye.get("coastal_high_hazard") is True
+        )
+        if elev < 4.0 and is_coastal:
+            risk += 0.25   # Immediate coastal / tidal storm surge zone
+        elif elev < 12.0 and is_coastal:
+            risk += 0.15   # Low-lying coastal plain
+        elif elev < 15.0 and mireye.get("within_floodplain"):
+            risk += 0.10   # Low inland floodplain
 
-    # ---- FEMA NFHL floodplain polygon (0–0.20) ----
-    # Upgrade: use fema_flood_zone code when available (from flood_risk preset)
-    flood_zone = mireye.get("fema_flood_zone", "")
+    # ---- FEMA NFHL floodplain polygon (0–0.25) ----
+    flood_zone = str(mireye.get("fema_flood_zone", ""))
     if mireye.get("coastal_high_hazard") is True:
-        risk += 0.30   # V-zone: high-velocity wave action (breaking waves ≥3ft)
+        risk += 0.25   # V-zone: high-velocity wave action (breaking waves ≥3ft)
     elif flood_zone.startswith("A") or mireye.get("within_floodplain") is True:
-        risk += 0.20   # A-zone SFHA or NFHL floodplain polygon
+        risk += 0.18   # A-zone SFHA or NFHL floodplain polygon
     elif mireye.get("flood_zone_subtype", "") == "0.2 PCT ANNUAL CHANCE FLOOD HAZARD":
-        risk += 0.08   # 0.2% annual (500-yr) flood hazard
+        risk += 0.06   # 0.2% annual (500-yr) flood hazard
+
 
     # NHD hydrographic area (river, canal, inundation zone) — bridge scour risk
     if mireye.get("intersects_nhd_area") is True:

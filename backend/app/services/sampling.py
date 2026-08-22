@@ -10,7 +10,8 @@ from app.services.open_meteo_service import open_meteo_service
 logger = logging.getLogger(__name__)
 
 # Maximum number of Mireye /v1/fetch calls per route
-MAX_MIREYE_PROBES = 6
+MAX_MIREYE_PROBES = 12
+
 
 
 class SamplingService:
@@ -108,7 +109,9 @@ class SamplingService:
             if elev_prev is not None and elev_curr is not None:
                 dist_between = point_targets[idx][2] - point_targets[idx - 1][2]
                 if dist_between > 0:
-                    slopes[idx] = round(((elev_curr - elev_prev) / dist_between) * 100.0, 2)
+                    raw_slope = ((elev_curr - elev_prev) / dist_between) * 100.0
+                    # Clamp unrealistic single-point DEM elevation jumps (cap at ±30% grade)
+                    slopes[idx] = round(max(-30.0, min(30.0, raw_slope)), 2)
 
         # Smart critical point selection
         critical_indices = self._select_critical_points(
@@ -126,8 +129,9 @@ class SamplingService:
         # - Low-elevation points (elev < 50m): additional flood_risk preset call
         #   to get fema_flood_zone code, intersects_nhd_area, wetland data, etc.
         # ====================================================================
-        semaphore = asyncio.Semaphore(4)
+        semaphore = asyncio.Semaphore(6)
         mireye_results = {}
+
 
         # Identify which critical points are low-elevation (flood candidates)
         low_elev_indices = {
@@ -235,6 +239,9 @@ class SamplingService:
 
         selected: Set[int] = set()
 
+        def is_too_close(candidate: int, min_gap: int = 2) -> bool:
+            return any(abs(candidate - s) < min_gap for s in selected)
+
         # 1. Worst bridge condition
         worst_bridge_idx = None
         worst_bridge_score = -1.0
@@ -260,8 +267,9 @@ class SamplingService:
         steepest_val = 0.0
         for idx, s in enumerate(slopes):
             if s is not None and abs(s) > steepest_val and idx not in selected:
-                steepest_val = abs(s)
-                steepest_idx = idx
+                if not is_too_close(idx):
+                    steepest_val = abs(s)
+                    steepest_idx = idx
         if steepest_idx is not None:
             selected.add(steepest_idx)
 
@@ -270,8 +278,9 @@ class SamplingService:
         lowest_elev = float('inf')
         for idx, e in enumerate(elevations):
             if e is not None and e < lowest_elev and idx not in selected:
-                lowest_elev = e
-                lowest_idx = idx
+                if not is_too_close(idx):
+                    lowest_elev = e
+                    lowest_idx = idx
         if lowest_idx is not None:
             selected.add(lowest_idx)
 
@@ -294,16 +303,16 @@ class SamplingService:
                 if deck.isdigit():
                     cond = float(deck)
                     if cond <= 4:
-                        b_vuln = max(b_vuln, 2.0)
+                        b_vuln = max(b_vuln, 1.8)
                     elif cond <= 6:
-                        b_vuln = max(b_vuln, 1.0)
+                        b_vuln = max(b_vuln, 0.7)
             # Terrain penalty heuristic
             s = slopes[idx]
             abs_s = abs(s) if s is not None else 0.0
-            t_pen = 1.8 if abs_s > 15 else (1.5 if abs_s > 8 else (1.2 if abs_s > 3 else 1.0))
+            t_pen = 1.7 if abs_s > 18 else (1.4 if abs_s > 10 else (1.15 if abs_s > 6 else 1.0))
             # Elevation flood risk heuristic
             e = elevations[idx]
-            elev_risk = 0.3 if (e is not None and e < 5) else (0.2 if (e is not None and e < 20) else 0.05)
+            elev_risk = 0.25 if (e is not None and e < 4) else (0.15 if (e is not None and e < 15) else 0.05)
             pre_bsi = elev_risk * (1.0 + b_vuln) * t_pen
             pre_bsi_scores.append((pre_bsi, idx))
 
@@ -314,6 +323,7 @@ class SamplingService:
             selected.add(idx)
 
         return selected
+
 
     def _find_point_at_distance(
         self,
