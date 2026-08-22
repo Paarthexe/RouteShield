@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, Navigation, MapPin, CheckCircle2, AlertTriangle, ShieldCheck, ShieldX, ShieldAlert, Layers } from 'lucide-react';
+import { Clock, Navigation, MapPin, CheckCircle2, AlertTriangle, ShieldCheck, ShieldX, ShieldAlert, Layers, Fuel, Zap } from 'lucide-react';
 
 const ROUTE_COLORS = {
   route_1: { border: 'border-cyan-500', text: 'text-cyan-400', bg: 'bg-cyan-500/10', badge: 'bg-cyan-500/20 text-cyan-300' },
@@ -196,6 +196,30 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
             <span className="text-[10px] text-slate-400 font-mono">
               Avg Age: {route.infrastructure_summary.average_bridge_age_years} yrs
             </span>
+          )}
+        </div>
+      )}
+
+      {/* Refueling & EV Infrastructure Summary */}
+      {route.infrastructure_summary && (route.infrastructure_summary.total_gas_stations > 0 || route.infrastructure_summary.total_ev_chargers > 0) && (
+        <div className="mb-2 py-1.5 px-2.5 bg-slate-950/80 border border-slate-800 rounded-lg text-xs space-y-1">
+          <div className="flex items-center justify-between text-[10px] font-mono">
+            <div className="flex items-center gap-3 text-slate-300">
+              <span className="flex items-center gap-1 text-amber-300 font-semibold">
+                <Fuel className="h-3 w-3 text-amber-400" /> Gas: {route.infrastructure_summary.total_gas_stations}
+              </span>
+              <span className="flex items-center gap-1 text-emerald-300 font-semibold">
+                <Zap className="h-3 w-3 text-emerald-400" /> EV: {route.infrastructure_summary.total_ev_chargers}
+              </span>
+            </div>
+            <span className="text-slate-400 font-mono">
+              Max Gap: {route.infrastructure_summary.max_gas_gap_km} km
+            </span>
+          </div>
+          {route.infrastructure_summary.fuel_desert_warning && (
+            <div className="text-[9px] font-mono text-amber-300/90 bg-amber-950/40 border border-amber-800/40 px-1.5 py-0.5 rounded">
+              Warning: {route.infrastructure_summary.fuel_desert_warning}
+            </div>
           )}
         </div>
       )}

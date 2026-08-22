@@ -100,6 +100,36 @@ export default function App() {
     setWaypoints(updated);
   };
 
+  const handleUpdateWaypoint = (index, value) => {
+    const updated = [...waypoints];
+    updated[index] = value;
+    setWaypoints(updated);
+  };
+
+  const handleAddRefuelWaypoint = async (station) => {
+    const coordStr = `${station.latitude.toFixed(5)}, ${station.longitude.toFixed(5)}`;
+    const updatedWps = [...waypoints, coordStr];
+    setWaypoints(updatedWps);
+    
+    setLoading(true);
+    setError(null);
+    setSelectedSample(null);
+    try {
+      const data = await analyzeRoutes(origin, destination, sampleInterval, updatedWps);
+      setAnalysisData(data);
+      if (data.agent_decision && data.agent_decision.primary_route_id) {
+        setSelectedRouteId(data.agent_decision.primary_route_id);
+      } else if (data.routes && data.routes.length > 0) {
+        setSelectedRouteId(data.routes[0].route_id);
+      }
+    } catch (err) {
+      console.error("Re-analysis error with refuel waypoint:", err);
+      setError(err.message || "Failed to re-route through refuel waypoint.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAnalyze = async () => {
     setLoading(true);
     setError(null);
@@ -313,6 +343,7 @@ export default function App() {
               onSetOrigin={(lat, lng) => setOrigin(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)}
               onSetDestination={(lat, lng) => setDestination(`${lat.toFixed(5)}, ${lng.toFixed(5)}`)}
               onSetWaypoint={handleSetWaypointFromMap}
+              onAddWaypoint={handleAddRefuelWaypoint}
               rawOriginStr={origin}
               rawDestinationStr={destination}
               rawWaypoints={waypoints}

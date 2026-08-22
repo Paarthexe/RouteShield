@@ -214,17 +214,6 @@ export default function LocationInput({
           </select>
         </div>
 
-        {/* Evacuation Capabilities Info Box */}
-        <div className="p-3 bg-zinc-950/80 border border-zinc-800 rounded-lg text-[11px] space-y-1 font-mono text-zinc-400">
-          <div className="flex items-center justify-between text-sky-400 font-bold text-[10px] uppercase tracking-wider">
-            <span>ACTIVE TERRAIN & HAZARD ENGINE</span>
-            <span className="text-[9px] bg-sky-950 text-sky-300 px-1.5 py-0.2 rounded border border-sky-800">READY</span>
-          </div>
-          <p className="text-[10px] text-zinc-400 font-sans leading-relaxed">
-            Samples corridors every {sampleInterval}m against Open-Meteo elevation maps, 618k FHWA bridges, & Mireye physical hazard facts.
-          </p>
-        </div>
-
         {/* Submit Button */}
         <button
           type="button"

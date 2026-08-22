@@ -54,10 +54,15 @@ def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViab
             time_delta_penalty = min(1.0, 0.8 + (time_ratio - 2.0) * 0.2)  # up to 1.0
 
     # --- Viability Score ---
+    infra_penalty = 0.0
+    if route.infrastructure and isinstance(route.infrastructure, dict):
+        infra_penalty = float(route.infrastructure.get("infrastructure_penalty", 0.0))
+
     score = 100.0 - (
         W_HAZARD_EXPOSURE * hazard_exposure_pct +
         W_BOTTLENECK_PENALTY * bottleneck_penalty +
-        W_TIME_DELTA * time_delta_penalty
+        W_TIME_DELTA * time_delta_penalty +
+        infra_penalty
     )
     score = round(max(0.0, min(100.0, score)), 1)
 

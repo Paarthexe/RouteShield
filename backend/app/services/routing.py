@@ -1,10 +1,11 @@
 import logging
 import httpx
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import HTTPException, status
 from app.config import settings
 from app.models.route_models import Coordinate, Route, GeoJSONLineString, AgentDecision, Location
 from app.services.sampling import sampling_service, compute_traffic_adjusted_duration
+from app.services.infrastructure_service import infrastructure_service
 from app.services.cache import cache_service
 from app.services.agent_service import run_agent_analysis
 
@@ -33,8 +34,12 @@ class RoutingService:
                 detail="No route found between these locations."
             )
 
+        # Pre-fetch regional refuel infrastructure for all candidate routes combined in a single request
+        all_routes_coords = [r.get("geometry", {}).get("coordinates", []) for r in raw_routes if r.get("geometry")]
+        regional_stations = await infrastructure_service.fetch_regional_stations(all_routes_coords)
+
         # Parallelize physical route sampling across ALL candidate corridors
-        async def process_single_route(idx: int, r_data: dict) -> Route:
+        async def process_single_route(idx: int, r_data: Dict[str, Any]) -> Route:
             route_id = f"route_{idx + 1}"
             dist_m = float(r_data.get("distance", 0.0))
             dur_s = float(r_data.get("duration", 0.0))
@@ -43,11 +48,13 @@ class RoutingService:
             geometry = GeoJSONLineString(type="LineString", coordinates=coords)
             tag = "Fastest Evacuation Corridor" if idx == 0 else f"Alternative Evacuation Corridor {idx}"
 
+            # Sample route physics and project pre-fetched infrastructure
             samples = await sampling_service.sample_route(
                 route_id=route_id,
                 geometry=geometry,
                 interval_m=interval
             )
+            infra_data = infrastructure_service.project_stations_for_route(regional_stations, coords, dist_m)
 
             # Deduplicate bridges across all sample points, compute summary
             unique_bridges = {}
@@ -78,6 +85,7 @@ class RoutingService:
                 travel_time_min=round(final_dur_s / 60.0, 1),
                 tag=tag,
                 samples=samples,
+                infrastructure=infra_data,
                 infrastructure_summary={
                     "total_bridges": len(bridge_list),
                     "aging_bridges": aging,
@@ -85,7 +93,12 @@ class RoutingService:
                     "critical_bridges": [
                         b["structure_id"] for b in bridge_list
                         if b.get("deck_condition") in ["1", "2", "3", "4"]
-                    ]
+                    ],
+                    "total_gas_stations": infra_data.get("total_gas_stations", 0),
+                    "total_ev_chargers": infra_data.get("total_ev_chargers", 0),
+                    "max_gas_gap_km": infra_data.get("max_gas_gap_km", 0.0),
+                    "max_ev_gap_km": infra_data.get("max_ev_gap_km", 0.0),
+                    "fuel_desert_warning": infra_data.get("fuel_desert_warning")
                 }
             )
 

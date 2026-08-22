@@ -83,6 +83,7 @@ class Route(BaseModel):
     travel_time_min: float
     tag: Optional[str] = None
     samples: List[RouteSample] = []
+    infrastructure: Optional[Dict[str, Any]] = None
     infrastructure_summary: Optional[Dict[str, Any]] = None
     active_realtime_alerts: List[Dict[str, Any]] = []
     viability_score: Optional[float] = None

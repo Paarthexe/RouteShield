@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { MapPin, Navigation, Compass, CheckCircle2 } from 'lucide-react';
+import { MapPin, Navigation, Compass, CheckCircle2, Fuel, Plus } from 'lucide-react';
 
 const ROUTE_LINE_COLORS = {
   route_1: '#06b6d4', // Cyan
@@ -34,6 +34,37 @@ const createCustomMarkerIcon = (label, colorBg, borderColor) => {
     `,
     iconSize: [28, 28],
     iconAnchor: [14, 14],
+  });
+};
+
+const createStationIcon = (type) => {
+  const isGas = type === 'gas';
+  const colorBg = isGas ? '#f59e0b' : '#10b981';
+  const borderCol = isGas ? '#fbbf24' : '#34d399';
+  const label = isGas ? 'GAS' : 'EV';
+  return L.divIcon({
+    className: 'custom-station-marker',
+    html: `
+      <div style="
+        background-color: ${colorBg};
+        border: 1.5px solid ${borderCol};
+        color: #09090b;
+        font-family: monospace;
+        font-weight: 800;
+        font-size: 9px;
+        letter-spacing: -0.5px;
+        padding: 2px 4px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 10px ${colorBg}80;
+      ">
+        ${label}
+      </div>
+    `,
+    iconSize: [26, 16],
+    iconAnchor: [13, 8],
   });
 };
 
@@ -131,6 +162,7 @@ export default function MapView({
   onSetOrigin,
   onSetDestination,
   onSetWaypoint,
+  onAddWaypoint,
   rawOriginStr,
   rawDestinationStr,
   rawWaypoints = [],
@@ -140,6 +172,9 @@ export default function MapView({
   pickerMode,
   setPickerMode
 }) {
+  const [showRefuelHubs, setShowRefuelHubs] = useState(false);
+  const [refuelFilter, setRefuelFilter] = useState('all');
+
   const originObj = parseCoordStr(origin) || resolvedOrigin || parseCoordStr(rawOriginStr);
   const destinationObj = parseCoordStr(destination) || resolvedDestination || parseCoordStr(rawDestinationStr);
 
@@ -171,6 +206,13 @@ export default function MapView({
   }
 
   const selectedRouteObj = routes.find(r => r.route_id === selectedRouteId) || routes[0];
+
+  // Refueling infrastructure stations extraction
+  const infra = selectedRouteObj?.infrastructure || selectedRouteObj?.infrastructure_summary || {};
+  const gasStations = infra.gas_stations || [];
+  const evChargers = infra.ev_chargers || [];
+  const allStations = [...gasStations, ...evChargers];
+  const stationsToRender = refuelFilter === 'gas' ? gasStations : refuelFilter === 'ev' ? evChargers : allStations;
 
   // Construct preview path coordinates (Origin -> Waypoints -> Destination)
   const previewPositions = [];
@@ -518,7 +560,120 @@ export default function MapView({
             </Popup>
           </Marker>
         ))}
+        {/* Refueling Infrastructure Station Markers */}
+        {showRefuelHubs && stationsToRender.map(st => (
+          <Marker
+            key={st.id}
+            position={[st.latitude, st.longitude]}
+            icon={createStationIcon(st.station_type)}
+          >
+            <Popup>
+              <div className="p-1 space-y-1.5 font-sans text-xs min-w-[200px]">
+                <div className="flex items-center justify-between">
+                  <span className={`text-[10px] font-bold uppercase font-mono px-1.5 py-0.5 rounded border ${
+                    st.station_type === 'gas'
+                      ? 'bg-amber-950/80 border-amber-800 text-amber-300'
+                      : 'bg-emerald-950/80 border-emerald-800 text-emerald-300'
+                  }`}>
+                    {st.station_type === 'gas' ? 'Gas / Diesel' : 'EV Fast Charging'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 font-mono">
+                    {st.offset_distance_m}m off-route
+                  </span>
+                </div>
+                <div className="font-bold text-slate-100 text-xs">
+                  {st.name}
+                </div>
+                {st.brand && st.brand !== st.name && (
+                  <div className="text-[10px] text-slate-400 font-mono">
+                    Brand: {st.brand}
+                  </div>
+                )}
+                <div className="text-[10px] text-cyan-300 font-mono">
+                  Corridor Point: {st.distance_from_origin_km} km from origin
+                </div>
+                {onAddWaypoint && (
+                  <button
+                    type="button"
+                    onClick={() => onAddWaypoint({
+                      latitude: st.latitude,
+                      longitude: st.longitude,
+                      query: st.name,
+                      display_name: st.name
+                    })}
+                    className="w-full mt-1.5 px-2 py-1 bg-cyan-950 hover:bg-cyan-900 border border-cyan-700 text-cyan-200 text-[10px] font-mono font-semibold rounded flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Plus className="h-3 w-3 text-cyan-400" /> Add as Refuel Waypoint
+                  </button>
+                )}
+              </div>
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
+
+      {/* Minimalist Floating Refuel & EV Map HUD */}
+      {routes && routes.length > 0 && (
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5 bg-zinc-900/90 backdrop-blur-md p-1 rounded-lg border border-zinc-800 shadow-xl">
+          <button
+            type="button"
+            onClick={() => setShowRefuelHubs(!showRefuelHubs)}
+            title={showRefuelHubs ? "Hide Gas & EV Stations" : "Show Gas & EV Stations"}
+            className={`p-1.5 rounded-md text-[11px] font-mono flex items-center justify-center transition-all cursor-pointer ${
+              showRefuelHubs
+                ? 'bg-amber-950/90 border border-amber-500/80 text-amber-200 shadow-sm'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+            }`}
+          >
+            <Fuel className={`h-4 w-4 ${showRefuelHubs ? 'text-amber-400' : 'text-zinc-400'}`} />
+          </button>
+
+          {/* Micro Filter Pills when active */}
+          {showRefuelHubs && (
+            <div className="flex items-center gap-1 border-l border-zinc-800 pl-1.5 text-[9px] font-mono">
+              {allStations.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setRefuelFilter('all')}
+                    className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                      refuelFilter === 'all'
+                        ? 'bg-zinc-700 text-white font-bold'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    All ({allStations.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRefuelFilter('gas')}
+                    className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                      refuelFilter === 'gas'
+                        ? 'bg-amber-900/80 border border-amber-600/60 text-amber-200 font-bold'
+                        : 'text-zinc-400 hover:text-amber-300'
+                    }`}
+                  >
+                    Gas ({gasStations.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRefuelFilter('ev')}
+                    className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                      refuelFilter === 'ev'
+                        ? 'bg-emerald-900/80 border border-emerald-600/60 text-emerald-200 font-bold'
+                        : 'text-zinc-400 hover:text-emerald-300'
+                    }`}
+                  >
+                    EV ({evChargers.length})
+                  </button>
+                </>
+              ) : (
+                <span className="px-1.5 py-0.5 text-zinc-400 text-[9px]">None within 1.5km</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Legend & Controls Overlay - ONLY SHOWN IF ROUTES ARE PRESENT */}
       {routes && routes.length > 0 && (
