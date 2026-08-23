@@ -20,18 +20,25 @@ def test_infrastructure_filter_and_project():
             "id": 101,
             "lat": 37.752,
             "lon": -122.35,
-            "tags": {"amenity": "fuel", "brand": "Chevron", "name": "Chevron Gas"}
+            "tags": {"amenity": "fuel", "brand": "Chevron", "name": "Chevron Gas", "capacity": "12"}
         },
-        # Near route (EV charger ~400m south)
+        # Near route (Fast EV charger ~400m south)
         {
             "id": 102,
             "lat": 37.746,
             "lon": -122.25,
-            "tags": {"amenity": "charging_station", "brand": "Tesla", "name": "Tesla Supercharger"}
+            "tags": {"amenity": "charging_station", "brand": "Tesla", "name": "Tesla Supercharger", "capacity": "8"}
+        },
+        # Near route (Standard AC EV charger ~300m north)
+        {
+            "id": 103,
+            "lat": 37.753,
+            "lon": -122.30,
+            "tags": {"amenity": "charging_station", "name": "Hotel Parking Charger", "capacity": "2"}
         },
         # Far off route (~5km away, should be filtered out)
         {
-            "id": 103,
+            "id": 104,
             "lat": 37.795,
             "lon": -122.35,
             "tags": {"amenity": "fuel", "brand": "Shell"}
@@ -40,10 +47,15 @@ def test_infrastructure_filter_and_project():
 
     res = infrastructure_service._filter_and_project_stations(elements, geometry_coords, total_distance_m=18000.0)
     assert res["total_gas_stations"] == 1
-    assert res["total_ev_chargers"] == 1
+    assert res["total_ev_fast_stations"] == 1
+    assert res["total_ev_standard_stations"] == 1
+    assert res["total_ev_chargers"] == 2
     assert res["gas_stations"][0]["brand"] == "Chevron"
-    assert res["ev_chargers"][0]["brand"] == "Tesla"
-    assert res["gas_stations"][0]["offset_distance_m"] < 1500.0
+    assert res["gas_stations"][0]["stalls_display"] == "12 Pumps"
+    assert res["ev_fast_stations"][0]["brand"] == "Tesla"
+    assert res["ev_fast_stations"][0]["stalls_display"] == "8 Fast Stalls"
+    assert res["ev_fast_stations"][0]["speed_tier"] == "fast"
+    assert res["ev_standard_stations"][0]["speed_tier"] == "standard"
     assert res["max_gas_gap_km"] > 0.0
 
 def test_fuel_desert_warning_and_penalty():

@@ -11,8 +11,11 @@ BSI_MODERATE = 0.35
 
 def _bridge_vulnerability(sample: RouteSample) -> float:
     """
-    Compute bridge vulnerability score for a sample point.
-    Returns 0.0 (no bridge) to 2.0 (poor condition bridge).
+    Compute bridge vulnerability score according to official FHWA NBIS (23 CFR 650) standards.
+    Condition 7-9 (Good): 0.0 vulnerability
+    Condition 5-6 (Fair): 0.20 vulnerability
+    Condition 4 (Poor / Structurally Deficient): 1.0 vulnerability
+    Condition 0-3 (Critical / Imminent Failure): 2.5 vulnerability
     """
     bridges = sample.nbi_bridges or []
     if not bridges:
@@ -24,100 +27,78 @@ def _bridge_vulnerability(sample: RouteSample) -> float:
         super_cond = str(b.get("super_condition", "")).strip()
         sub_cond = str(b.get("sub_condition", "")).strip()
 
-        # Normalize condition codes to numeric (0-9, higher = better)
         def parse_cond(val: str) -> float:
             if val.isdigit():
                 return float(val)
-            return 5.0  # unknown defaults to fair
+            return 7.0  # Default to good/operational if unrated
 
         deck_val = parse_cond(deck)
         super_val = parse_cond(super_cond)
         sub_val = parse_cond(sub_cond)
 
-        # Use worst of the three conditions
         min_cond = min(deck_val, super_val, sub_val)
 
-        # Age penalty
-        age = b.get("age_years")
-        age_penalty = 0.0
-        if age is not None:
-            if age > 60:
-                age_penalty = 0.4
-            elif age > 40:
-                age_penalty = 0.2
-
-        if min_cond <= 4:
-            vuln = 2.0 + age_penalty  # Poor
+        if min_cond <= 3:
+            vuln = 2.5  # Critical / Imminent Failure
+        elif min_cond <= 4:
+            vuln = 1.0  # Structurally Deficient (Poor)
         elif min_cond <= 6:
-            vuln = 1.0 + age_penalty  # Fair
-        elif min_cond <= 9:
-            vuln = 0.2  # Good
+            vuln = 0.20 # Fair condition
         else:
-            vuln = 0.5  # Unknown
+            vuln = 0.0  # Good / Excellent (No penalty)
 
         worst = max(worst, vuln)
 
-    return min(worst, 2.5)  # Cap at 2.5
+    return min(worst, 2.5)
 
 
 def _terrain_penalty(slope_pct: float) -> float:
     """
-    Terrain penalty based on slope grade.
-    Flat (0-3%) = 1.0, moderate (3-8%) = 1.2, steep (8-15%) = 1.5, extreme (>15%) = 1.8
+    Terrain penalty based on slope grade (AASHTO Green Book standards).
+    Flat (0-3%) = 1.0, moderate (3-8%) = 1.15, steep (8-15%) = 1.35, extreme (>15%) = 1.60
     """
     abs_slope = abs(slope_pct) if slope_pct is not None else 0.0
     if abs_slope > 15.0:
-        return 1.8
+        return 1.60
     elif abs_slope > 8.0:
-        return 1.5
+        return 1.35
     elif abs_slope > 3.0:
-        return 1.2
+        return 1.15
     return 1.0
 
 
 def _hazard_risk(sample: RouteSample) -> float:
     """
     Compute hazard risk score for a sample [0.0 - 1.0].
-    Based on seismic PGA, steep slope, low elevation, and Mireye raw fields.
-    Scaled for higher sensitivity to physical environmental hazards.
+    Based on seismic PGA, severe terrain grade, active alerts, and Mireye hazard facts.
     """
     risk = 0.0
     mireye = sample.mireye_data or {}
 
-    # Seismic PGA contribution (0 - 0.50)
+    # Seismic Peak Ground Acceleration (PGA) — USGS ShakeMap Scale
     pga = mireye.get("seismic_pga_g")
     if pga is not None:
-        if pga >= 0.5:
-            risk += 0.50
-        elif pga >= 0.3:
-            risk += 0.35
+        if pga >= 0.50:
+            risk += 0.50  # Violent shaking / structural damage threshold
+        elif pga >= 0.30:
+            risk += 0.35  # Strong shaking
         elif pga >= 0.15:
-            risk += 0.20
+            risk += 0.15  # Moderate shaking
         elif pga >= 0.08:
-            risk += 0.10
+            risk += 0.05
 
-    # Slope contribution (0 - 0.40)
+    # Slope grade risk
     slope = sample.slope_pct
     if slope is not None:
         abs_slope = abs(slope)
-        if abs_slope > 12.0:
-            risk += 0.40
-        elif abs_slope > 7.0:
-            risk += 0.28
-        elif abs_slope > 3.5:
-            risk += 0.15
+        if abs_slope > 15.0:
+            risk += 0.35  # Extreme mountain pass
+        elif abs_slope > 8.0:
+            risk += 0.20  # Steep highway grade
+        elif abs_slope > 5.0:
+            risk += 0.08
 
-    # Low elevation / flood plain contribution (0 - 0.40)
-    elev = mireye.get("elevation_m")
-    if elev is not None:
-        if elev < 5.0:
-            risk += 0.40  # Coastal / tidal flood zone
-        elif elev < 20.0:
-            risk += 0.28  # Low-lying flood plain
-        elif elev < 50.0:
-            risk += 0.12
-
-    # Check Mireye raw fields for additional hazard signals (wildfire, flood, landslide)
+    # Check Mireye raw fields for environmental hazard signals (wildfire, flood, landslide)
     raw_fields = mireye.get("raw_fields", {})
     for field_name, field_data in raw_fields.items():
         fname_lower = field_name.lower()
@@ -125,6 +106,10 @@ def _hazard_risk(sample: RouteSample) -> float:
             val = field_data.get("value") if isinstance(field_data, dict) else None
             if val is not None and isinstance(val, (int, float)) and val > 0:
                 risk += min(0.40, (val / 10.0) * 0.40)
+
+    # Active NWS Weather / Flood Warnings at this coordinate
+    if sample.traffic_flow and sample.traffic_flow.get("alerts"):
+        risk += 0.30
 
     return min(risk, 1.0)
 

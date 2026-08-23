@@ -168,8 +168,8 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
         </div>
       )}
 
-      {/* Rejection Reasons */}
-      {viability && viability.rejection_reasons && viability.rejection_reasons.length > 0 && (
+      {/* Rejection Reasons - Only displayed if corridor is actively REJECTED */}
+      {statusKey === 'REJECTED' && viability && viability.rejection_reasons && viability.rejection_reasons.length > 0 && (
         <div className="mb-2 p-2 bg-rose-950/60 border border-rose-800/60 rounded-lg">
           <div className="flex items-center gap-1.5 text-[10px] font-bold text-rose-400 uppercase mb-1">
             <ShieldX className="h-3 w-3" />
@@ -203,14 +203,19 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
       {/* Refueling & EV Infrastructure Summary */}
       {route.infrastructure_summary && (route.infrastructure_summary.total_gas_stations > 0 || route.infrastructure_summary.total_ev_chargers > 0) && (
         <div className="mb-2 py-1.5 px-2.5 bg-slate-950/80 border border-slate-800 rounded-lg text-xs space-y-1">
-          <div className="flex items-center justify-between text-[10px] font-mono">
-            <div className="flex items-center gap-3 text-slate-300">
+          <div className="flex items-center justify-between text-[10px] font-mono flex-wrap gap-y-1">
+            <div className="flex items-center gap-2.5 text-slate-300">
               <span className="flex items-center gap-1 text-amber-300 font-semibold">
                 <Fuel className="h-3 w-3 text-amber-400" /> Gas: {route.infrastructure_summary.total_gas_stations}
               </span>
-              <span className="flex items-center gap-1 text-emerald-300 font-semibold">
-                <Zap className="h-3 w-3 text-emerald-400" /> EV: {route.infrastructure_summary.total_ev_chargers}
+              <span className="flex items-center gap-1 text-emerald-300 font-semibold" title="DC Fast Chargers (20-30 min)">
+                <Zap className="h-3 w-3 text-emerald-400" /> Fast EV: {route.infrastructure_summary.total_ev_fast_stations ?? route.infrastructure_summary.total_ev_chargers}
               </span>
+              {route.infrastructure_summary.total_ev_standard_stations > 0 && (
+                <span className="text-sky-300/80 font-normal" title="Standard AC Chargers (6-8 hrs)">
+                  Std: {route.infrastructure_summary.total_ev_standard_stations}
+                </span>
+              )}
             </div>
             <span className="text-slate-400 font-mono">
               Max Gap: {route.infrastructure_summary.max_gas_gap_km} km

@@ -96,9 +96,12 @@ class RoutingService:
                         if b.get("deck_condition") in ["1", "2", "3", "4"]
                     ],
                     "total_gas_stations": infra_data.get("total_gas_stations", 0),
+                    "total_ev_fast_stations": infra_data.get("total_ev_fast_stations", 0),
+                    "total_ev_standard_stations": infra_data.get("total_ev_standard_stations", 0),
                     "total_ev_chargers": infra_data.get("total_ev_chargers", 0),
                     "max_gas_gap_km": infra_data.get("max_gas_gap_km", 0.0),
                     "max_ev_gap_km": infra_data.get("max_ev_gap_km", 0.0),
+                    "max_ev_fast_gap_km": infra_data.get("max_ev_fast_gap_km", 0.0),
                     "fuel_desert_warning": infra_data.get("fuel_desert_warning")
                 }
             )

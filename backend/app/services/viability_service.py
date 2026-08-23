@@ -128,14 +128,17 @@ def rank_routes(routes: List[Route]) -> List[Route]:
                 route.viability.status = "BACKUP"
             else:
                 route.viability.status = "ALTERNATIVE"
+            route.viability.rejection_reasons = []
         all_ranked = candidates + rejected
     else:
-        # Fallback if all corridors are hazardous: sort rejected routes by viability score
+        # Fallback if all corridors triggered hazards: select least-vulnerable corridors as PRIMARY/BACKUP
         rejected.sort(key=lambda r: r.viability.score if r.viability else 0, reverse=True)
         if rejected:
             rejected[0].viability.status = "PRIMARY"
+            rejected[0].viability.rejection_reasons = []
             if len(rejected) > 1:
                 rejected[1].viability.status = "BACKUP"
+                rejected[1].viability.rejection_reasons = []
         all_ranked = rejected
 
     return all_ranked

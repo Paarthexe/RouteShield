@@ -156,8 +156,8 @@ class InfrastructureService:
         total_distance_m: float
     ) -> Dict[str, Any]:
         """
-        Filter stations by perpendicular distance to route, compute cumulative distance along route,
-        and calculate separate Gas and EV gap metrics.
+        Filter stations by perpendicular distance to route, categorize EV speed tiers (Fast vs Standard),
+        track stall capacity, apply 150km EV buffer, and decouple gas viability penalty.
         """
         # Precompute cumulative distance along route coordinates
         cum_dist = [0.0]
@@ -170,7 +170,8 @@ class InfrastructureService:
         total_route_d = cum_dist[-1] if cum_dist[-1] > 0 else total_distance_m
 
         gas_stations = []
-        ev_chargers = []
+        ev_fast_stations = []
+        ev_standard_stations = []
 
         for el in elements:
             s_lat = el.get("lat")
@@ -180,11 +181,46 @@ class InfrastructureService:
 
             tags = el.get("tags", {})
             amenity = tags.get("amenity")
-            station_type = "gas" if amenity == "fuel" else "ev" if amenity == "charging_station" else "gas"
-
-            # Brand and display name resolution
             brand = tags.get("brand") or tags.get("operator") or tags.get("network") or ""
-            name = tags.get("name") or brand or ("Gas Station" if station_type == "gas" else "EV Charging Hub")
+
+            # Classify Gas vs EV Speed Tiers
+            if amenity == "fuel":
+                station_type = "gas"
+                speed_tier = "gas"
+                speed_label = "Gasoline / Diesel"
+                est_charge_time = "3–5 min Refueling"
+                power_label = "Standard Fuel"
+                name = tags.get("name") or brand or "Gas Station"
+                stalls = tags.get("capacity") or tags.get("pumps")
+                stalls_display = f"{stalls} Pumps" if stalls else "Standard Station"
+            else:
+                # EV Station — Determine Speed Tier (Level 3 DC Fast vs Level 2 Standard AC)
+                name = tags.get("name") or brand or "EV Charging Hub"
+                name_lower = name.lower()
+                brand_lower = brand.lower()
+
+                is_fast = (
+                    tags.get("fast_charge") in ["yes", "1"]
+                    or any(k in tags for k in ["socket:type2_combo", "socket:tesla_supercharger", "socket:chademo", "socket:nacs"])
+                    or any(kw in name_lower or kw in brand_lower for kw in ["supercharger", "electrify america", "evgo", "fast", "hyper", "high power"])
+                )
+
+                cap_val = tags.get("capacity")
+                if is_fast:
+                    station_type = "ev_fast"
+                    speed_tier = "fast"
+                    speed_label = "DC Fast Charger"
+                    est_charge_time = "20–30 min (20-80%)"
+                    power_label = "50–350 kW High-Power"
+                    stalls_display = f"{cap_val} Fast Stalls" if cap_val else "Fast Charging Hub"
+                else:
+                    station_type = "ev_standard"
+                    speed_tier = "standard"
+                    speed_label = "Standard AC Charger"
+                    est_charge_time = "6–8 hrs (Overnight / Shelter / Rescue)"
+                    power_label = "7–22 kW AC Power"
+                    stalls_display = f"{cap_val} AC Stalls" if cap_val else "Standard AC Hub"
+
             brand_display = brand if brand else name
 
             # Find closest segment on the route
@@ -200,13 +236,18 @@ class InfrastructureService:
                     seg_len = cum_dist[i + 1] - cum_dist[i]
                     best_route_dist = cum_dist[i] + t * seg_len
 
-            # Check if within accessible corridor offset
+            # Check if within accessible corridor offset (1.5 km)
             if min_offset <= MAX_OFFSET_DISTANCE_M:
                 station_item = {
-                    "id": f"station_{el.get('id', len(gas_stations) + len(ev_chargers))}",
+                    "id": f"station_{el.get('id', len(gas_stations) + len(ev_fast_stations) + len(ev_standard_stations))}",
                     "name": name,
                     "brand": brand_display,
                     "station_type": station_type,
+                    "speed_tier": speed_tier,
+                    "speed_label": speed_label,
+                    "est_charge_time": est_charge_time,
+                    "power_label": power_label,
+                    "stalls_display": stalls_display,
                     "latitude": s_lat,
                     "longitude": s_lon,
                     "distance_from_origin_km": round(best_route_dist / 1000.0, 1),
@@ -215,41 +256,53 @@ class InfrastructureService:
 
                 if station_type == "gas":
                     gas_stations.append(station_item)
+                elif station_type == "ev_fast":
+                    ev_fast_stations.append(station_item)
                 else:
-                    ev_chargers.append(station_item)
+                    ev_standard_stations.append(station_item)
 
         # Sort stations by distance from origin
         gas_stations.sort(key=lambda s: s["distance_from_origin_km"])
-        ev_chargers.sort(key=lambda s: s["distance_from_origin_km"])
+        ev_fast_stations.sort(key=lambda s: s["distance_from_origin_km"])
+        ev_standard_stations.sort(key=lambda s: s["distance_from_origin_km"])
 
-        # Calculate max refuel gap for Gas and EV
+        ev_all_chargers = ev_fast_stations + ev_standard_stations
+        ev_all_chargers.sort(key=lambda s: s["distance_from_origin_km"])
+
+        # Calculate max refuel gap for Gas and DC Fast EV
         max_gas_gap_km = self._calculate_max_gap(gas_stations, total_route_d)
-        max_ev_gap_km = self._calculate_max_gap(ev_chargers, total_route_d)
+        max_ev_fast_gap_km = self._calculate_max_gap(ev_fast_stations, total_route_d)
 
-        # Desert warning calculation
+        # Desert warning calculation with 150 km EV range buffer
         warnings = []
         if max_gas_gap_km > REFUEL_DESERT_THRESHOLD_KM:
             warnings.append(f"Fuel desert: {max_gas_gap_km:.0f} km without gas station")
-        if max_ev_gap_km > REFUEL_DESERT_THRESHOLD_KM:
-            warnings.append(f"EV charging desert: {max_ev_gap_km:.0f} km without fast charger")
 
-        # Refuel desert penalty (0 to 10 points max, keeping impact balanced)
-        penalty = 0.0
+        # Only trigger EV charging desert warning if corridor exceeds 150 km battery range buffer
+        if total_route_d > 150_000 and max_ev_fast_gap_km > 80.0:
+            warnings.append(f"EV fast charging desert: {max_ev_fast_gap_km:.0f} km without high-speed charger")
+
+        # Decoupled viability penalty (based on Gas availability to avoid penalizing rural gas routes)
+        gas_penalty = 0.0
         if max_gas_gap_km > REFUEL_DESERT_THRESHOLD_KM:
-            penalty += min(6.0, (max_gas_gap_km - REFUEL_DESERT_THRESHOLD_KM) * 0.20)
-        if max_ev_gap_km > REFUEL_DESERT_THRESHOLD_KM:
-            penalty += min(4.0, (max_ev_gap_km - REFUEL_DESERT_THRESHOLD_KM) * 0.15)
-        penalty = round(min(10.0, penalty), 1)
+            gas_penalty = min(10.0, (max_gas_gap_km - REFUEL_DESERT_THRESHOLD_KM) * 0.25)
+
+        penalty = round(gas_penalty, 1)
 
         return {
             "total_gas_stations": len(gas_stations),
-            "total_ev_chargers": len(ev_chargers),
+            "total_ev_fast_stations": len(ev_fast_stations),
+            "total_ev_standard_stations": len(ev_standard_stations),
+            "total_ev_chargers": len(ev_all_chargers),
             "max_gas_gap_km": max_gas_gap_km,
-            "max_ev_gap_km": max_ev_gap_km,
+            "max_ev_gap_km": max_ev_fast_gap_km,
+            "max_ev_fast_gap_km": max_ev_fast_gap_km,
             "fuel_desert_warning": "; ".join(warnings) if warnings else None,
             "infrastructure_penalty": penalty,
             "gas_stations": gas_stations,
-            "ev_chargers": ev_chargers
+            "ev_fast_stations": ev_fast_stations,
+            "ev_standard_stations": ev_standard_stations,
+            "ev_chargers": ev_all_chargers
         }
 
     def _calculate_max_gap(self, stations: List[Dict[str, Any]], total_distance_m: float) -> float:
@@ -269,12 +322,17 @@ class InfrastructureService:
     def _empty_response(self) -> Dict[str, Any]:
         return {
             "total_gas_stations": 0,
+            "total_ev_fast_stations": 0,
+            "total_ev_standard_stations": 0,
             "total_ev_chargers": 0,
             "max_gas_gap_km": 0.0,
             "max_ev_gap_km": 0.0,
+            "max_ev_fast_gap_km": 0.0,
             "fuel_desert_warning": None,
             "infrastructure_penalty": 0.0,
             "gas_stations": [],
+            "ev_fast_stations": [],
+            "ev_standard_stations": [],
             "ev_chargers": []
         }
 
