@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import httpx
 from typing import List, Optional, Dict, Any
 from fastapi import HTTPException, status
@@ -102,12 +103,20 @@ class RoutingService:
                 }
             )
 
-        import asyncio
-        parsed_routes = await asyncio.gather(
+        parsed_routes = list(await asyncio.gather(
             *[process_single_route(idx, r_data) for idx, r_data in enumerate(raw_routes)]
-        )
+        ))
 
-        return list(parsed_routes)
+        # Dynamically assign the Fastest tag to the corridor with the lowest actual duration
+        if parsed_routes:
+            min_time = min(r.travel_time_min for r in parsed_routes)
+            for idx, r in enumerate(parsed_routes):
+                if abs(r.travel_time_min - min_time) < 0.05:
+                    r.tag = "Fastest Evacuation Corridor"
+                else:
+                    r.tag = f"Alternative Evacuation Corridor {idx}"
+
+        return parsed_routes
 
     async def generate_and_analyze(
         self,

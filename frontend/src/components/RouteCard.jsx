@@ -46,7 +46,7 @@ function ViabilityGauge({ score }) {
 
 export default function RouteCard({ route, isSelected, onSelect, fastestDuration }) {
   const colorScheme = ROUTE_COLORS[route.route_id] || ROUTE_COLORS.route_1;
-  const isFastest = route.route_id === 'route_1';
+  const isFastest = fastestDuration && Math.abs(route.travel_time_min - fastestDuration) < 0.1;
   const viability = route.viability;
   const statusKey = viability?.status || 'CANDIDATE';
   const statusCfg = STATUS_CONFIG[statusKey] || STATUS_CONFIG.CANDIDATE;

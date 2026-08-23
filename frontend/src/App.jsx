@@ -166,7 +166,9 @@ export default function App() {
   };
 
   const selectedRouteObj = analysisData?.routes?.find(r => r.route_id === selectedRouteId);
-  const fastestDuration = analysisData?.routes?.[0]?.travel_time_min;
+  const fastestDuration = analysisData?.routes?.length
+    ? Math.min(...analysisData.routes.map(r => r.travel_time_min))
+    : null;
 
   return (
     <div className="min-h-screen flex flex-col bg-zinc-950 text-zinc-100 font-sans">
