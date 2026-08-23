@@ -204,7 +204,7 @@ export default function SampleInspector({ sample, onClose }) {
                       </span>
                       {isDeficient && (
                         <span className="text-[9px] font-mono uppercase font-bold text-rose-400 bg-rose-950/80 px-1.5 py-0.5 rounded border border-rose-800/80">
-                          ⚠ Structurally Deficient
+                          STRUCTURALLY DEFICIENT
                         </span>
                       )}
                     </div>
@@ -252,11 +252,12 @@ export default function SampleInspector({ sample, onClose }) {
                       return (
                         <div key={cIdx} className={`p-1 rounded border border-slate-800/80 ${colorClass}`}>
                           <span className="text-[8px] text-slate-400 block truncate">{comp.label}</span>
-                          <span className="text-[11px] font-bold block">{comp.val || '—'}</span>
+                          <span className="text-[11px] font-bold block">{comp.val || '-'}</span>
                         </div>
                       );
                     })}
                   </div>
+
 
                   {/* Structure Metadata Row */}
                   <div className="grid grid-cols-3 gap-2 text-[11px] pt-1.5 border-t border-slate-800/80 font-mono text-slate-300">

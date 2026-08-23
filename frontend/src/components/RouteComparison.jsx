@@ -24,8 +24,9 @@ export default function RouteComparison({ routes, selectedRouteId, onSelectRoute
                 <td className="px-4 py-3"><span className="flex items-center gap-2 font-semibold text-slate-200"><RouteIcon className="h-3.5 w-3.5 text-cyan-400" />{route.tag || route.route_id}</span></td>
                 <td className="px-3 py-3"><span className="flex items-center gap-1.5 text-slate-200"><Clock3 className="h-3.5 w-3.5 text-slate-500" />{route.travel_time_min} min</span><span className="text-[10px] text-slate-500">{route.travel_time_min === fastest ? 'Fastest' : `+${Math.round(route.travel_time_min - fastest)} min`}</span></td>
                 <td className="px-3 py-3 text-slate-300">{route.distance_km} km</td>
-                <td className="px-3 py-3 text-cyan-300">{evidence || '—'} <span className="text-slate-500">pts</span></td>
+                <td className="px-3 py-3 text-cyan-300">{evidence || '-'} <span className="text-slate-500">pts</span></td>
                 <td className="px-4 py-3"><span className="inline-flex items-center gap-1.5 rounded-full border border-amber-800/60 bg-amber-950/40 px-2 py-1 text-[10px] text-amber-300"><Gauge className="h-3 w-3" />Analysis pending</span></td>
+
               </tr>;
             })}
           </tbody>

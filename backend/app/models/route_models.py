@@ -70,6 +70,7 @@ class AgentDecision(BaseModel):
     trade_off_explanation: str = ""
     steps: List[AgentStep] = []
     mireye_insight: Optional[str] = None
+    disaster_type: str = "ALL_HAZARDS"
 
 
 class Route(BaseModel):
@@ -93,5 +94,7 @@ class RouteAnalyzeResponse(BaseModel):
     waypoints: List[Location] = []
     routes: List[Route]
     sample_interval_m: float
+    disaster_type: str = "ALL_HAZARDS"
     cache_hit: bool = False
     agent_decision: Optional[AgentDecision] = None
+

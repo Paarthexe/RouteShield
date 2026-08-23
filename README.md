@@ -1,38 +1,47 @@
 # RouteShield
 
-Standard GPS navigation routes for travel time. During a disaster (wildfire, hurricane storm surge, flood, or earthquake), the fastest road is often the first to fail — an aging bridge rated "poor condition", a canyon corridor that traps vehicles, or a low causeway under storm surge.
+Standard GPS navigation routes for travel time. During a disaster (wildfire, hurricane storm surge, flood, or earthquake), the fastest road is often the first to fail: an aging bridge rated poor condition, a canyon corridor that traps vehicles, or a low causeway under storm surge.
 
-RouteShield evaluates the physical vulnerability of candidate evacuation corridors and scores them using structural bridge ratings, digital elevation models, and environmental hazard data.
+RouteShield evaluates the physical vulnerability of candidate evacuation corridors and scores them using structural bridge ratings, digital elevation models, and environmental hazard data calibrated to the active disaster type.
+
+---
+
+## Disaster-Aware Evacuation Protocols
+
+RouteShield dynamically adapts its spatial sampling heuristics, Mireye probe allocation, and Bottleneck Severity Index weights based on the active disaster scenario:
+
+* **All Hazards (Composite):** Balanced multi-hazard assessment across seismic, flood, fire, and structural factors.
+* **Wildfire:** Prioritizes CAL FIRE Very High severity zones, historical burn perimeters, high wind corridors, and single-road canyon egress chokepoints ($2.0\times$ weight on fire factors).
+* **Flood / Surge:** Prioritizes FEMA V/A floodplains, low coastal elevations ($<12\text{m}$), river channels, dam failure paths, and bridge scour risks ($2.0\times$ weight on inundation factors).
+* **Earthquake:** Prioritizes high seismic Peak Ground Acceleration (PGA), ASCE 7 seismic design categories, and bridges with poor structural ratings ($2.0\times$ weight on seismic and structural factors).
+* **Landslide:** Prioritizes steep slope gradients ($>10\%$) and USGS landslide susceptibility indexes ($2.0\times$ weight on slope and landslide factors).
 
 ---
 
 ## How It Works
 
 ```
-Origin + Destination
-       │
-       ▼
+Origin + Destination + Disaster Protocol
+       |
+       v
 1. Corridor Discovery
-   └── OSRM routing + lateral anchor bypass synthesis (generates up to 5 distinct corridors)
-       │
-       ▼
-2. Spatial Sampling
-   ├── 500m physical distance interpolation
-   ├── Open-Meteo DEM bulk elevation & slope gradient calculation
-   └── FHWA National Bridge Inventory lookup (740,000+ US bridges, 300m spatial radius)
-       │
-       ▼
-3. Deep Environmental Probing (Mireye API)
-   └── Up to 12 targeted /v1/fetch probes per corridor (natural_hazard + flood_risk presets)
-       │
-       ▼
-4. Risk & Viability Scoring
-   ├── Bottleneck Severity Index (BSI) computed per sample point
-   └── Corridor Viability Score (0–100) & Catastrophic Safety Gates
-       │
-       ▼
-5. Agentic Decision & Ranked HUD
-   └── Classifies corridors into PRIMARY, BACKUP, or HIGH RISK with cited /v1/ask evidence
+   +-- OSRM routing + lateral anchor bypass synthesis (generates up to 5 distinct corridors)
+       |
+       v
+2. Spatial Sampling & Disaster-Targeted Probing
+   +-- 500m physical distance interpolation
+   +-- Open-Meteo DEM bulk elevation & slope gradient calculation
+   +-- FHWA National Bridge Inventory lookup (740,000+ US bridges, 300m spatial radius)
+   +-- Up to 12 targeted Mireye API probes per corridor (natural_hazard + flood_risk presets)
+       |
+       v
+3. Disaster-Calibrated Risk & Viability Scoring
+   +-- Bottleneck Severity Index (BSI) computed per sample point
+   +-- Corridor Viability Score (0-100) & Catastrophic Safety Gates
+       |
+       v
+4. Agentic Decision & Ranked HUD
+   +-- Classifies corridors into PRIMARY, BACKUP, or HIGH RISK with cited Mireye /v1/ask evidence
 ```
 
 ---
@@ -48,7 +57,7 @@ $$\text{BSI} = \text{Hazard Risk} \times (1 + \text{Bridge Vulnerability}) \time
 #### **A. Hazard Risk ($H \in [0.0, 1.0]$)**
 Weighted sum of verified environmental signals from Mireye and USGS/NOAA datasets:
 
-| Signal | Source | Condition | Weight |
+| Signal | Source | Condition | Base Weight |
 |---|---|---|---|
 | **Seismic PGA** | USGS NSHM 2023 | $\ge 0.6g$ / $\ge 0.4g$ / $\ge 0.2g$ | $+0.40$ / $+0.30$ / $+0.15$ |
 | **Wildfire Severity** | CAL FIRE FHSZ / FEMA NRI | Very High / High / Historical Burn Area | $+0.25$ / $+0.15$ / $+0.15$ |
@@ -61,15 +70,17 @@ Weighted sum of verified environmental signals from Mireye and USGS/NOAA dataset
 | **Terrain Grade** | Open-Meteo DEM | Slope $>18\%$ / $>12\%$ / $>7\%$ | $+0.25$ / $+0.15$ / $+0.08$ |
 | **Bridge Scour** | Compound | Bridge located inside active FEMA Floodplain | $+0.15$ |
 
+*Note: Base weights are dynamically scaled by active disaster protocol multipliers ($2.0\times$ for matching disaster hazard domains).*
+
 #### **B. Bridge Vulnerability ($V \in [0.0, 2.2]$)**
-Evaluated across all 5 FHWA NBI component condition ratings (0–9 scale):
+Evaluated across all 5 FHWA NBI component condition ratings (0-9 scale):
 * Item 58: Deck Condition
 * Item 59: Superstructure Condition
 * Item 60: Substructure Condition
 * Item 61: Channel & Channel Protection (Scour)
 * Item 62: Culvert Condition
 
-$$V = V_{\text{base}} + \text{Age Penalty} + \text{Sufficiency Penalty}$$
+$$V = V_{\text{base}} + \text{Age Penalty} + \text{Sufficiency Penalty} + \text{Disaster Boost}$$
 
 * **Condition Base ($V_{\text{base}}$):**
   * $\min(\text{components}) \le 4$ (**Structurally Deficient**): $1.8$
@@ -80,8 +91,8 @@ $$V = V_{\text{base}} + \text{Age Penalty} + \text{Sufficiency Penalty}$$
 
 #### **C. Terrain Penalty ($T \in [1.0, 1.7]$)**
 * Grade $\le 6\%$: $1.0\times$ (normal highway)
-* Grade $6–10\%$: $1.15\times$
-* Grade $10–18\%$: $1.40\times$
+* Grade $6-10\%$: $1.15\times$
+* Grade $10-18\%$: $1.40\times$
 * Grade $>18\%$: $1.70\times$ (steep mountain pass)
 
 #### **D. BSI Action Thresholds**
@@ -165,10 +176,10 @@ Open `http://localhost:5173` in your browser.
 
 | Scenario | Origin | Destination | Key Dynamics |
 |---|---|---|---|
-| **Wildfire Canyon** | `Paradise, CA` | `Chico, CA` | Evaluates CAL FIRE Very High severity zone, 2018 Camp Fire burn perimeter, and single-road egress failure points. |
-| **Mountain Flooding** | `Asheville, NC` | `Charlotte, NC` | Identifies French Broad river gorge bridges, elevation drops, and evaluates safer southern bypass highways. |
-| **Seismic Faultline** | `Santa Cruz, CA` | `San Jose, CA` | Flags $\sim 0.8g$ seismic PGA and landslide susceptibility across Highway 17 vs. valley alternatives. |
-| **Coastal Storm Surge** | `Key West, FL` | `Miami, FL` | Flags low-elevation causeways ($<3\text{m}$) and FEMA V-zones along US-1 Overseas Highway. |
+| **Wildfire Canyon** | `Paradise, CA` | `Chico, CA` | Evaluates CAL FIRE Very High severity zone, 2018 Camp Fire burn perimeter, and single-road egress failure points under Wildfire protocol. |
+| **Mountain Flooding** | `Asheville, NC` | `Charlotte, NC` | Identifies French Broad river gorge bridges, elevation drops, and evaluates safer southern bypass highways under Flood protocol. |
+| **Seismic Faultline** | `Santa Cruz, CA` | `San Jose, CA` | Flags ~0.8g seismic PGA and landslide susceptibility across Highway 17 vs. valley alternatives under Earthquake protocol. |
+| **Coastal Storm Surge** | `Key West, FL` | `Miami, FL` | Flags low-elevation causeways ($<3\text{m}$) and FEMA V-zones along US-1 Overseas Highway under Flood/Surge protocol. |
 
 ---
 

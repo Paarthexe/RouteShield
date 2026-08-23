@@ -204,9 +204,10 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
         <span className="text-xs text-slate-400">
           {statusKey === 'PRIMARY' ? 'Recommended Evacuation Corridor' :
            statusKey === 'BACKUP' ? 'Secondary Backup Corridor' :
-           statusKey === 'REJECTED' ? 'Fragile Corridor — Not Recommended' :
+           statusKey === 'REJECTED' ? 'Fragile Corridor - Not Recommended' :
            'Candidate Evacuation Corridor'}
         </span>
+
         <button
           onClick={(e) => {
             e.stopPropagation();

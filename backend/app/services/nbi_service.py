@@ -219,9 +219,10 @@ class NBIService:
         key = f"{grid_lat},{grid_lon}"
         h = int(hashlib.md5(key.encode()).hexdigest(), 16)
 
-        # ~35% of sample regions contain a bridge structure
-        if (h % 100) > 35:
+        # ~12% of sample regions contain a major bridge structure (realistic spacing)
+        if (h % 100) > 12:
             return []
+
 
         struct_num = (h % 89999) + 10000
         year_built = 1960 + (h % 58)  # 1960 - 2018

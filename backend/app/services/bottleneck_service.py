@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from app.models.route_models import Route, RouteSample, BottleneckInfo
 
 logger = logging.getLogger(__name__)
@@ -9,7 +9,7 @@ BSI_CRITICAL = 0.70
 BSI_MODERATE = 0.40
 
 
-def _bridge_vulnerability(sample: RouteSample) -> float:
+def _bridge_vulnerability(sample: RouteSample, disaster_type: str = "ALL_HAZARDS") -> float:
     """
     Compute bridge vulnerability score for a sample point across all FHWA NBI
     component ratings (Item 58 Deck, 59 Superstructure, 60 Substructure,
@@ -60,23 +60,29 @@ def _bridge_vulnerability(sample: RouteSample) -> float:
         suff_penalty = 0.0
         if suff is not None:
             if suff < 50.0:
-                suff_penalty = 0.3  # Ineligible for federal repair / severe deficiency
+                suff_penalty = 0.3  # Severe deficiency
             elif suff < 75.0:
                 suff_penalty = 0.15
 
+        # Disaster-specific bridge multiplier
+        disaster_boost = 0.0
+        if disaster_type == "EARTHQUAKE" and min_cond <= 6:
+            disaster_boost = 0.3  # Structural vulnerability under ground acceleration
+        elif disaster_type == "FLOOD_HURRICANE" and (parse_cond(channel_cond) or 9.0) <= 5:
+            disaster_boost = 0.3  # Scour critical channel vulnerability
+
         if min_cond <= 4 or b.get("structurally_deficient") is True:
-            vuln = 1.8 + age_penalty + suff_penalty  # Poor / Structurally Deficient
+            vuln = 1.8 + age_penalty + suff_penalty + disaster_boost
         elif min_cond <= 6:
-            vuln = 0.7 + age_penalty + suff_penalty  # Fair
+            vuln = 0.7 + age_penalty + suff_penalty + disaster_boost
         elif min_cond <= 9:
-            vuln = 0.1  # Good condition
+            vuln = 0.1
         else:
-            vuln = 0.3  # Serviceable / Enclosed Culvert
+            vuln = 0.3
 
         worst = max(worst, vuln)
 
-    return min(worst, 2.2)  # Cap at 2.2
-
+    return min(worst, 2.2)
 
 
 def _terrain_penalty(slope_pct: float) -> float:
@@ -95,32 +101,33 @@ def _terrain_penalty(slope_pct: float) -> float:
     return 1.0
 
 
-def _hazard_risk(sample: RouteSample) -> float:
+def _hazard_risk(sample: RouteSample, disaster_type: str = "ALL_HAZARDS") -> float:
     """
-    Compute hazard risk score for a sample [0.0 - 1.0].
-
-    Uses confirmed Mireye natural_hazard fields with calibrated
-    weights avoiding false alarms on standard road geography.
+    Compute hazard risk score for a sample [0.0 - 1.0] tailored to active disaster.
     """
     risk = 0.0
     mireye = sample.mireye_data or {}
     bridges = sample.nbi_bridges or []
 
-    # ---- Seismic PGA (0–0.40) ----
+    # Disaster mode weighting factors
+    w_seismic = 2.0 if disaster_type == "EARTHQUAKE" else (0.4 if disaster_type in ["WILDFIRE", "FLOOD_HURRICANE"] else 1.0)
+    w_flood = 2.0 if disaster_type == "FLOOD_HURRICANE" else (0.4 if disaster_type in ["WILDFIRE", "EARTHQUAKE"] else 1.0)
+    w_fire = 2.0 if disaster_type == "WILDFIRE" else (0.3 if disaster_type in ["FLOOD_HURRICANE", "EARTHQUAKE"] else 1.0)
+    w_landslide = 2.0 if disaster_type == "LANDSLIDE" else (1.4 if disaster_type == "EARTHQUAKE" else 1.0)
+
+    # ---- Seismic PGA ----
     pga = mireye.get("seismic_pga_g")
     if pga is not None:
         if pga >= 0.6:
-            risk += 0.40
+            risk += 0.40 * w_seismic
         elif pga >= 0.4:
-            risk += 0.30
+            risk += 0.30 * w_seismic
         elif pga >= 0.2:
-            risk += 0.15
+            risk += 0.15 * w_seismic
         elif pga >= 0.1:
-            risk += 0.05
+            risk += 0.05 * w_seismic
 
-    # ---- Slope / terrain (0–0.25) ----
-    # slope_pct is computed from Open-Meteo DEM (all samples);
-    # slope_degrees may also be present from Mireye USGS 3DEP.
+    # ---- Slope / terrain ----
     slope = sample.slope_pct
     if slope is None:
         slope_deg = mireye.get("slope_degrees")
@@ -129,14 +136,15 @@ def _hazard_risk(sample: RouteSample) -> float:
             slope = math.tan(math.radians(slope_deg)) * 100.0
     if slope is not None:
         abs_slope = abs(slope)
+        slope_weight = w_landslide if disaster_type == "LANDSLIDE" else 1.0
         if abs_slope > 18.0:
-            risk += 0.25
+            risk += 0.25 * slope_weight
         elif abs_slope > 12.0:
-            risk += 0.15
+            risk += 0.15 * slope_weight
         elif abs_slope > 7.0:
-            risk += 0.08
+            risk += 0.08 * slope_weight
 
-    # ---- Elevation / coastal flood (0–0.25) ----
+    # ---- Elevation / coastal flood ----
     elev = mireye.get("elevation_m")
     if elev is not None:
         is_coastal = (
@@ -144,85 +152,83 @@ def _hazard_risk(sample: RouteSample) -> float:
             or mireye.get("coastal_high_hazard") is True
         )
         if elev < 4.0 and is_coastal:
-            risk += 0.25   # Immediate coastal / tidal storm surge zone
+            risk += 0.25 * w_flood
         elif elev < 12.0 and is_coastal:
-            risk += 0.15   # Low-lying coastal plain
+            risk += 0.15 * w_flood
         elif elev < 15.0 and mireye.get("within_floodplain"):
-            risk += 0.10   # Low inland floodplain
+            risk += 0.10 * w_flood
 
-    # ---- FEMA NFHL floodplain polygon (0–0.25) ----
+    # ---- FEMA NFHL floodplain polygon ----
     flood_zone = str(mireye.get("fema_flood_zone", ""))
     if mireye.get("coastal_high_hazard") is True:
-        risk += 0.25   # V-zone: high-velocity wave action (breaking waves ≥3ft)
+        risk += 0.25 * w_flood
     elif flood_zone.startswith("A") or mireye.get("within_floodplain") is True:
-        risk += 0.18   # A-zone SFHA or NFHL floodplain polygon
+        risk += 0.18 * w_flood
     elif mireye.get("flood_zone_subtype", "") == "0.2 PCT ANNUAL CHANCE FLOOD HAZARD":
-        risk += 0.06   # 0.2% annual (500-yr) flood hazard
+        risk += 0.06 * w_flood
 
-
-    # NHD hydrographic area (river, canal, inundation zone) — bridge scour risk
+    # NHD hydrographic area (river, canal, inundation zone)
     if mireye.get("intersects_nhd_area") is True:
-        risk += 0.10
+        risk += 0.10 * w_flood
 
-    # JRC Surface Water permanence — high = permanent water body nearby
+    # JRC Surface Water permanence
     swp = mireye.get("surface_water_permanence_pct")
     if swp is not None and swp >= 75:
-        risk += 0.10  # Permanent water channel
+        risk += 0.10 * w_flood
     elif swp is not None and swp >= 25:
-        risk += 0.05  # Seasonal water
+        risk += 0.05 * w_flood
 
-    # ---- Wildfire: FEMA NRI annual frequency (0–0.25) ----
+    # ---- Wildfire: FEMA NRI annual frequency ----
     wf_freq = mireye.get("wildfire_annual_freq")
     if wf_freq is not None:
-        if wf_freq >= 0.001:      # ≥ 0.1% annual chance — significant fire corridor
-            risk += 0.25
+        if wf_freq >= 0.001:
+            risk += 0.25 * w_fire
         elif wf_freq >= 0.0003:
-            risk += 0.15
+            risk += 0.15 * w_fire
         elif wf_freq > 0.0:
-            risk += 0.05
+            risk += 0.05 * w_fire
 
-    # ---- Wildfire: CAL FIRE FHSZ class (California only) (0–0.25) ----
+    # ---- Wildfire: CAL FIRE FHSZ class ----
     fhsz = mireye.get("fire_hazard_zone")
     if fhsz == "Very High":
-        risk += 0.25
+        risk += 0.25 * w_fire
     elif fhsz == "High":
-        risk += 0.15
+        risk += 0.15 * w_fire
     elif fhsz == "Moderate":
-        risk += 0.08
+        risk += 0.08 * w_fire
 
-    # ---- Recent burn history: nearest fire perimeter (0–0.15) ----
+    # ---- Recent burn history: nearest fire perimeter ----
     fire_dist = mireye.get("nearest_fire_perimeter_m")
     burn_year = mireye.get("most_recent_burn_year")
     if fire_dist is not None and fire_dist < 100.0:
-        # Point was inside or immediately adjacent to a historical burn perimeter
-        risk += 0.15
+        risk += 0.15 * w_fire
     elif fire_dist is not None and fire_dist < 2000.0 and burn_year and burn_year >= 2015:
-        risk += 0.08  # Recent fire within 2 km
+        risk += 0.08 * w_fire
 
-    # ---- Landslide susceptibility 0–100 index (0–0.25) ----
+    # ---- Landslide susceptibility ----
     ls = mireye.get("landslide_susceptibility")
     if ls is not None:
         if ls >= 70:
-            risk += 0.25
+            risk += 0.25 * w_landslide
         elif ls >= 40:
-            risk += 0.15
+            risk += 0.15 * w_landslide
         elif ls >= 20:
-            risk += 0.07
+            risk += 0.07 * w_landslide
 
-    # ---- Dam hazard (0–0.20) ----
+    # ---- Dam hazard ----
     dam_dist = mireye.get("nearest_dam_distance_m")
     dam_hazard = mireye.get("nearest_dam_hazard")
     hh_dams = mireye.get("high_hazard_dams_10km", 0) or 0
     if dam_hazard == "High" and dam_dist is not None and dam_dist < 1000.0:
-        risk += 0.20
+        risk += 0.20 * w_flood
     elif dam_hazard == "High" and dam_dist is not None and dam_dist < 5000.0:
-        risk += 0.12
+        risk += 0.12 * w_flood
     elif dam_hazard == "Significant" and dam_dist is not None and dam_dist < 2000.0:
-        risk += 0.06
+        risk += 0.06 * w_flood
     if hh_dams >= 5:
-        risk += 0.05  # Dense upstream dam concentration
+        risk += 0.05 * w_flood
 
-    # ---- Karst / sinkhole (0–0.10) ----
+    # ---- Karst / sinkhole ----
     if mireye.get("in_karst_area") is True:
         karst_class = mireye.get("karst_exposure_class", "")
         if karst_class == "exposed":
@@ -230,52 +236,50 @@ def _hazard_risk(sample: RouteSample) -> float:
         else:
             risk += 0.05
 
-    # ---- High wind speed (0–0.08) ----
+    # ---- High wind speed ----
     wind_mph = mireye.get("wind_speed_mph")
     if wind_mph is not None:
+        wind_mult = 1.5 if disaster_type in ["WILDFIRE", "FLOOD_HURRICANE"] else 1.0
         if wind_mph >= 150:
-            risk += 0.08   # Hurricane-force design wind
+            risk += 0.08 * wind_mult
         elif wind_mph >= 130:
-            risk += 0.05
+            risk += 0.05 * wind_mult
 
-    # ---- Compound: floodplain + bridge → bridge scour risk bonus (0–0.15) ----
+    # ---- Compound: floodplain + bridge -> bridge scour risk ----
     if mireye.get("within_floodplain") is True and bridges:
-        risk += 0.15
+        risk += 0.15 * w_flood
 
-    # ---- Compound: high seismic + bridge → liquefaction/structural bonus (0–0.10) ----
+    # ---- Compound: high seismic + bridge -> liquefaction / structural bonus ----
     if pga is not None and pga >= 0.4 and bridges:
-        risk += 0.10
+        risk += 0.10 * w_seismic
 
     return min(risk, 1.0)
 
 
-def analyze_route_bottlenecks(route: Route) -> Tuple[List[BottleneckInfo], Route]:
+def analyze_route_bottlenecks(route: Route, disaster_type: str = "ALL_HAZARDS") -> Tuple[List[BottleneckInfo], Route]:
     """
-    Analyze all sample points in a route to identify bottlenecks.
+    Analyze all sample points in a route to identify bottlenecks under active disaster.
     Returns (list of bottlenecks, updated route with hazard_score on samples).
     """
     bottlenecks: List[BottleneckInfo] = []
     updated_samples: List[RouteSample] = []
 
     for sample in route.samples:
-        h_risk = _hazard_risk(sample)
-        b_vuln = _bridge_vulnerability(sample)
+        h_risk = _hazard_risk(sample, disaster_type=disaster_type)
+        b_vuln = _bridge_vulnerability(sample, disaster_type=disaster_type)
         t_penalty = _terrain_penalty(sample.slope_pct)
 
         bsi = h_risk * (1.0 + b_vuln) * t_penalty
 
-        # Update sample with hazard score
         sample.hazard_score = round(h_risk, 3)
         updated_samples.append(sample)
 
         if bsi >= BSI_MODERATE:
-            # Determine severity label
             if bsi >= BSI_CRITICAL:
                 severity = "Critical"
             else:
                 severity = "Moderate"
 
-            # Build description
             desc_parts = []
             if b_vuln > 1.5:
                 bridges = sample.nbi_bridges or []
@@ -298,10 +302,10 @@ def analyze_route_bottlenecks(route: Route) -> Tuple[List[BottleneckInfo], Route
                 if sample.slope_pct and abs(sample.slope_pct) > 8:
                     risk_factors.append(f"steep grade {abs(sample.slope_pct):.1f}%")
 
-                # FEMA flood zone (specific code when available from flood_risk preset)
+                # FEMA flood zone
                 flood_zone = mireye.get("fema_flood_zone", "")
                 if mireye.get("coastal_high_hazard") is True:
-                    risk_factors.append(f"FEMA V-zone (coastal wave action)")
+                    risk_factors.append("FEMA V-zone (coastal wave action)")
                 elif flood_zone:
                     subtype = mireye.get("flood_zone_subtype", "")
                     bfe = mireye.get("fema_base_flood_elevation")
@@ -313,7 +317,7 @@ def analyze_route_bottlenecks(route: Route) -> Tuple[List[BottleneckInfo], Route
                 elif mireye.get("within_floodplain") is True:
                     risk_factors.append("FEMA NFHL floodplain (SFHA)")
 
-                # NHD hydrographic area — river/canal crossing (bridge scour)
+                # NHD hydrographic area
                 if mireye.get("intersects_nhd_area") is True:
                     risk_factors.append("hydrographic area (river/canal crossing)")
 
@@ -322,7 +326,7 @@ def analyze_route_bottlenecks(route: Route) -> Tuple[List[BottleneckInfo], Route
                 if elev is not None and elev < 20 and not mireye.get("within_floodplain"):
                     risk_factors.append(f"low elevation {elev:.0f}m")
 
-                # Wildfire — CAL FIRE FHSZ
+                # Wildfire - CAL FIRE FHSZ
                 fhsz = mireye.get("fire_hazard_zone")
                 if fhsz in ("Very High", "High"):
                     burn_year = mireye.get("most_recent_burn_year")
@@ -334,7 +338,7 @@ def analyze_route_bottlenecks(route: Route) -> Tuple[List[BottleneckInfo], Route
                     burn_year = mireye.get("most_recent_burn_year")
                     risk_factors.append(f"inside burn perimeter ({burn_year})" if burn_year else "inside historical burn perimeter")
 
-                # Wildfire — FEMA NRI (non-CA)
+                # Wildfire - FEMA NRI
                 wf_freq = mireye.get("wildfire_annual_freq")
                 if wf_freq and wf_freq >= 0.001 and not fhsz:
                     risk_factors.append(f"wildfire freq {wf_freq:.4f}/yr (FEMA NRI)")
@@ -379,8 +383,9 @@ def analyze_route_bottlenecks(route: Route) -> Tuple[List[BottleneckInfo], Route
     route.bottlenecks = bottlenecks
 
     logger.info(
-        f"Route {route.route_id}: {len(bottlenecks)} bottlenecks detected "
+        f"Route {route.route_id} [{disaster_type}]: {len(bottlenecks)} bottlenecks detected "
         f"({sum(1 for b in bottlenecks if b.severity_label == 'Critical')} critical)"
     )
 
     return bottlenecks, route
+

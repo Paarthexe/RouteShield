@@ -33,8 +33,9 @@ export default function DecisionReadout({ routes, selectedRoute, agentDecision }
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2.5">
           <span className="block text-[9px] uppercase tracking-wider text-slate-500">Evidence points</span>
-          <span className="mt-1 block text-sm font-bold text-cyan-300">{evidenceCount || '—'}</span>
+          <span className="mt-1 block text-sm font-bold text-cyan-300">{evidenceCount || '-'}</span>
         </div>
+
       </div>
       <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-400">
         <ShieldCheck className={`h-3.5 w-3.5 ${noViableRoute ? 'text-rose-400' : 'text-emerald-400'}`} />

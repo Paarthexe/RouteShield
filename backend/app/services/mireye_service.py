@@ -14,9 +14,9 @@ _FIELD_MAP: Dict[str, str] = {
     "seismic_design_category":           "seismic_design_category",
     # Wind
     "design_wind_speed_mph":             "wind_speed_mph",
-    # Wildfire — FEMA NRI (nationwide)
+    # Wildfire - FEMA NRI (nationwide)
     "wildfire_annual_frequency":         "wildfire_annual_freq",
-    # Wildfire — CAL FIRE (California only; absent elsewhere)
+    # Wildfire - CAL FIRE (California only; absent elsewhere)
     "fire_hazard_severity_zone_class":   "fire_hazard_zone",         # e.g. "Very High"
     "fire_hazard_responsibility_area":   "fire_responsibility_area", # "SRA" / "LRA"
     "nearest_fire_perimeter_distance_m": "nearest_fire_perimeter_m",
@@ -27,7 +27,7 @@ _FIELD_MAP: Dict[str, str] = {
     "lightning_annual_flash_days":       "lightning_flash_days",
     # Landslide
     "landslide_susceptibility_index":    "landslide_susceptibility",  # 0-100
-    # Flood — FEMA NFHL
+    # Flood - FEMA NFHL
     "within_floodplain_polygon":         "within_floodplain",         # bool
     # Dam hazard
     "nearest_dam_distance_m":            "nearest_dam_distance_m",
@@ -39,10 +39,11 @@ _FIELD_MAP: Dict[str, str] = {
     "karst_exposure_class":              "karst_exposure_class",
     # Soil
     "soil_shrink_swell_class":           "soil_shrink_swell",
-    # Terrain — USGS 3DEP
+    # Terrain - USGS 3DEP
     "slope_degrees":                     "slope_degrees",
-    # Elevation — also extracted separately below
+    # Elevation - also extracted separately below
     "elevation":                         "elevation_m",
+
 
     # ---- Extended flood fields (flood_risk preset) ----
     # Not in natural_hazard preset, but populated when we probe low-elevation
@@ -89,7 +90,7 @@ class MireyeDataService:
         return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
     async def fetch_location_facts(self, lat: float, lon: float, preset: str = "natural_hazard") -> Optional[Dict[str, Any]]:
-        """POST /v1/fetch — provenance-tagged physical world data at a coordinate.
+        """POST /v1/fetch - provenance-tagged physical world data at a coordinate.
 
         Returns a flat dict with named keys for every known natural_hazard field
         (seismic, wildfire, flood, landslide, dam, karst, wind, slope, elevation)
@@ -115,7 +116,7 @@ class MireyeDataService:
                     data = resp.json()
                     fields = data.get("fields", {})
 
-                    # Base result — always include raw_fields for forward-compat
+                    # Base result - always include raw_fields for forward-compat
                     result: Dict[str, Any] = {
                         "lat": lat,
                         "lng": lon,
@@ -145,7 +146,7 @@ class MireyeDataService:
                     named = [k for k in result if k not in ("lat", "lng", "fetched_at", "raw_fields")]
                     logger.info(
                         f"Mireye /v1/fetch success lat={lat:.4f}, lon={lon:.4f} "
-                        f"— {len(named)} named fields extracted"
+                        f"- {len(named)} named fields extracted"
                     )
                     cache_service.set(cache_key, result)
                     return result
@@ -156,7 +157,7 @@ class MireyeDataService:
         return None
 
     async def lookup_place(self, input_str: str) -> Optional[Dict[str, Any]]:
-        """POST /v1/lookup — county, state, FIPS, and census metadata for an address."""
+        """POST /v1/lookup - county, state, FIPS, and census metadata for an address."""
         if not self.api_key:
             return None
         try:
@@ -177,7 +178,8 @@ class MireyeDataService:
         return None
 
     async def ask_question(self, lat: float, lon: float, question: str) -> Optional[str]:
-        """POST /v1/ask — grounded, cited contextual answer about a location."""
+        """POST /v1/ask - grounded, cited contextual answer about a location."""
+
         if not self.api_key:
             return None
 

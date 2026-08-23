@@ -331,7 +331,7 @@ export default function MapView({
           );
         })}
 
-        {/* Render physical distance samples as sleek, tactical points */}
+        {/* Render physical distance samples with distinct Mireye probe highlights */}
         {showSamples && selectedRouteObj && selectedRouteObj.samples && (
           selectedRouteObj.samples.map(sample => {
             const isSampleSelected = selectedSample && selectedSample.sample_id === sample.sample_id;
@@ -345,52 +345,86 @@ export default function MapView({
             else if (hazardScore > 0.3) fillColor = '#f59e0b'; // Amber
             else if (hazardScore > 0.1) fillColor = '#22d3ee'; // Light cyan
 
-            const radius = isSampleSelected ? 6 : isMireyeProbed ? 5 : 3;
+            // Mireye points are prominently sized with emerald targeting
+            const radius = isSampleSelected ? 8 : isMireyeProbed ? 6.5 : 2.5;
 
             return (
-              <CircleMarker
-                key={sample.sample_id}
-                center={[sample.latitude, sample.longitude]}
-                radius={radius}
-                eventHandlers={{
-                  click: () => onSelectSample(sample)
-                }}
-                pathOptions={{
-                  fillColor: isSampleSelected ? '#38bdf8' : isMireyeProbed ? '#10b981' : fillColor,
-                  fillOpacity: isMireyeProbed ? 1.0 : 0.75,
-                  color: isSampleSelected ? '#ffffff' : isMireyeProbed ? '#047857' : '#0f172a',
-                  weight: isSampleSelected ? 2.5 : isMireyeProbed ? 2 : 1
-                }}
-              >
-                <Popup>
-                  <div className="p-1 space-y-1 font-sans text-xs">
-                    <span className="text-[10px] font-bold text-cyan-400 font-mono block">
-                      {sample.sample_id}
-                    </span>
-                    <div className="font-bold text-slate-100">
-                      Distance: <span className="text-cyan-300 font-mono">{distKm} km</span>
+              <React.Fragment key={sample.sample_id}>
+                {/* Secondary outer radar halo for Mireye Probed points */}
+                {isMireyeProbed && !isSampleSelected && (
+                  <CircleMarker
+                    center={[sample.latitude, sample.longitude]}
+                    radius={11}
+                    pathOptions={{
+                      color: '#10b981',
+                      fillColor: '#10b981',
+                      fillOpacity: 0.15,
+                      weight: 1.5,
+                      dashArray: '2, 3'
+                    }}
+                    interactive={false}
+                  />
+                )}
+
+                <CircleMarker
+                  center={[sample.latitude, sample.longitude]}
+                  radius={radius}
+                  eventHandlers={{
+                    click: () => onSelectSample(sample)
+                  }}
+                  pathOptions={{
+                    fillColor: isSampleSelected
+                      ? '#38bdf8'
+                      : isMireyeProbed
+                      ? '#10b981'
+                      : fillColor,
+                    fillOpacity: isSampleSelected ? 1.0 : isMireyeProbed ? 0.95 : 0.5,
+                    color: isSampleSelected
+                      ? '#ffffff'
+                      : isMireyeProbed
+                      ? '#ecfdf5'
+                      : '#0f172a',
+                    weight: isSampleSelected ? 2.5 : isMireyeProbed ? 2 : 1
+                  }}
+                >
+                  <Popup>
+                    <div className="p-1 space-y-1.5 font-sans text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold text-cyan-400 font-mono block">
+                          {sample.sample_id}
+                        </span>
+                        {isMireyeProbed && (
+                          <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-600 font-mono font-bold">
+                            MIREYE PROBE
+                          </span>
+                        )}
+                      </div>
+                      <div className="font-bold text-slate-100 font-mono text-[11px]">
+                        Distance: <span className="text-cyan-300">{distKm} km</span>
+                      </div>
+                      {hazardScore > 0 && (
+                        <div className="text-[10px] text-slate-300 font-mono">
+                          Hazard Score: <span className={hazardScore > 0.3 ? 'text-amber-400 font-bold' : 'text-slate-300'}>{hazardScore.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {sample.slope_pct != null && (
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          Slope: <span className={Math.abs(sample.slope_pct) > 8 ? 'text-rose-400 font-bold' : 'text-slate-300'}>{sample.slope_pct.toFixed(1)}%</span>
+                        </div>
+                      )}
+                      {sample.nbi_bridges && sample.nbi_bridges.length > 0 && (
+                        <div className="text-[10px] text-amber-300 font-mono">
+                          Bridges nearby: {sample.nbi_bridges.length}
+                        </div>
+                      )}
                     </div>
-                    {isMireyeProbed && (
-                      <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700 font-mono inline-block">
-                        Mireye Probed
-                      </span>
-                    )}
-                    {hazardScore > 0 && (
-                      <div className="text-[10px] text-slate-400 font-mono">
-                        Hazard Score: <span className={hazardScore > 0.3 ? 'text-amber-400 font-bold' : 'text-slate-300'}>{hazardScore.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {sample.slope_pct != null && (
-                      <div className="text-[10px] text-slate-400 font-mono">
-                        Slope: <span className={Math.abs(sample.slope_pct) > 8 ? 'text-rose-400 font-bold' : 'text-slate-300'}>{sample.slope_pct.toFixed(1)}%</span>
-                      </div>
-                    )}
-                  </div>
-                </Popup>
-              </CircleMarker>
+                  </Popup>
+                </CircleMarker>
+              </React.Fragment>
             );
           })
         )}
+
 
         {/* Peak Bottleneck Markers (Top Critical Chokepoints Only - Spaced >= 5km) */}
         {showSamples && (() => {

@@ -21,7 +21,8 @@ class RoutingService:
         origin: Coordinate,
         destination: Coordinate,
         waypoints: Optional[List[Coordinate]] = None,
-        sample_interval_m: Optional[float] = None
+        sample_interval_m: Optional[float] = None,
+        disaster_type: str = "ALL_HAZARDS"
     ) -> List[Route]:
         interval = sample_interval_m or settings.ROUTE_SAMPLE_INTERVAL_M
         w_list = waypoints or []
@@ -46,7 +47,8 @@ class RoutingService:
             samples = await sampling_service.sample_route(
                 route_id=route_id,
                 geometry=geometry,
-                interval_m=interval
+                interval_m=interval,
+                disaster_type=disaster_type
             )
 
             # Deduplicate bridges across all sample points, compute summary
@@ -96,7 +98,8 @@ class RoutingService:
         origin_loc: Location,
         destination_loc: Location,
         waypoints: Optional[List[Coordinate]] = None,
-        sample_interval_m: Optional[float] = None
+        sample_interval_m: Optional[float] = None,
+        disaster_type: str = "ALL_HAZARDS"
     ) -> tuple:
         """
         Generate routes AND run the full agent analysis pipeline.
@@ -106,13 +109,17 @@ class RoutingService:
             origin=origin,
             destination=destination,
             waypoints=waypoints,
-            sample_interval_m=sample_interval_m
+            sample_interval_m=sample_interval_m,
+            disaster_type=disaster_type
         )
 
         # Run agentic analysis pipeline
-        agent_decision = await run_agent_analysis(routes, origin_loc, destination_loc)
+        agent_decision = await run_agent_analysis(
+            routes, origin_loc, destination_loc, disaster_type=disaster_type
+        )
 
         return routes, agent_decision
+
 
     async def _fetch_osrm_routes(
         self,
@@ -135,7 +142,8 @@ class RoutingService:
                     "overview": "full",
                     "geometries": "geojson",
                     "alternatives": "true",
-                    "steps": "false"
+                    "steps": "false",
+                    "continue_straight": "true"
                 })
                 if resp.status_code == 200:
                     data = resp.json()
@@ -167,29 +175,37 @@ class RoutingService:
         max_total: int = 5
     ) -> List[dict]:
         """
-        Generate high-quality lateral bypass corridors by:
-        1. Calculating trisection & midpoint corridor coordinates (33%, 50%, 67%).
-        2. Applying perpendicular lateral offsets (both directions, moderate & wide).
-        3. Snapping waypoints to real drivable roads via OSRM /nearest.
-        4. Enforcing quality filters (detour ratio <= 1.85x distance / 2.2x duration)
-           and uniqueness filters (>= 5% distance variance) to eliminate zig-zags.
+        Generate high-quality lateral bypass corridors with zero loops or backtracking:
+        1. Calculating trisection & midpoint corridor coordinates (35%, 50%, 65%).
+        2. Applying gentle perpendicular lateral offsets (10% - 16% of direct distance).
+        3. Enforcing geometric ellipse constraints (D_AW + D_WB <= 1.22 * D_AB) to eliminate V-hooks.
+        4. Snapping waypoints to real drivable roads via OSRM /nearest.
+        5. Setting continue_straight=true to forbid OSRM from generating intermediate U-turns.
+        6. Filtering through _is_clean_highway_geometry to eliminate any trajectory self-intersection.
+        7. Enforcing strict highway viability gates (detour <= 1.35x distance / 1.45x duration).
         """
+        import math
+
         lat1, lon1 = origin.latitude, origin.longitude
         lat2, lon2 = destination.latitude, destination.longitude
 
         d_lat = lat2 - lat1
         d_lon = lon2 - lon1
+        direct_dist = math.hypot(d_lat, d_lon)
+        if direct_dist < 1e-5:
+            return []
 
         base_dist = float(existing_routes[0].get("distance", 0.0)) if existing_routes else 1.0
         base_dur = float(existing_routes[0].get("duration", 0.0)) if existing_routes else 1.0
 
-        # Anchor configs: (fraction along corridor vector, lateral perpendicular scale)
+        # Gentle, realistic highway bypass anchors: (fraction along corridor, perpendicular scale)
+        # Moderate lateral offsets (10% - 16%) strictly target real parallel highways
         anchor_configs = [
-            (0.50, 0.25), (0.50, -0.25),
-            (0.35, 0.30), (0.35, -0.30),
-            (0.65, 0.30), (0.65, -0.30),
-            (0.50, 0.45), (0.50, -0.45),
-            (0.35, 0.50), (0.65, -0.50),
+            (0.50, 0.12), (0.50, -0.12),
+            (0.35, 0.15), (0.35, -0.15),
+            (0.65, 0.15), (0.65, -0.15),
+            (0.40, 0.10), (0.40, -0.10),
+            (0.60, 0.10), (0.60, -0.10),
         ]
         new_routes: List[dict] = []
 
@@ -202,14 +218,20 @@ class RoutingService:
                 p_lat = lat1 + d_lat * fraction
                 p_lon = lon1 + d_lon * fraction
 
-                # Apply perpendicular lateral offset
+                # Apply gentle perpendicular lateral offset
                 raw_w_lat = p_lat - d_lon * scale
                 raw_w_lon = p_lon + d_lat * scale
+
+                # Ellipse geometric check: ensure waypoint does not force a detour or hairpin
+                d_aw = math.hypot(raw_w_lat - lat1, raw_w_lon - lon1)
+                d_wb = math.hypot(lat2 - raw_w_lat, lon2 - raw_w_lon)
+                if (d_aw + d_wb) > 1.22 * direct_dist:
+                    continue
 
                 # Snap waypoint to nearest real drivable road node
                 snap_url = f"{self.osrm_base_url}/nearest/v1/driving/{raw_w_lon:.5f},{raw_w_lat:.5f}"
                 w_lat, w_lon = raw_w_lat, raw_w_lon
-                road_name = "bypass corridor"
+                road_name = "parallel corridor"
                 try:
                     snap_res = await client.get(snap_url, params={"number": "1"})
                     if snap_res.status_code == 200:
@@ -217,11 +239,11 @@ class RoutingService:
                         wps = snap_data.get("waypoints", [])
                         if wps:
                             w_lon, w_lat = wps[0]["location"]
-                            road_name = wps[0].get("name") or "bypass corridor"
+                            road_name = wps[0].get("name") or "parallel corridor"
                 except Exception:
                     pass
 
-                # Route through snapped waypoint
+                # Route through snapped waypoint with continue_straight=true to strictly prevent U-turns
                 path_str = f"{lon1},{lat1};{w_lon:.5f},{w_lat:.5f};{lon2},{lat2}"
                 synth_url = f"{self.osrm_base_url}/route/v1/driving/{path_str}"
 
@@ -229,7 +251,8 @@ class RoutingService:
                     resp = await client.get(synth_url, params={
                         "overview": "full",
                         "geometries": "geojson",
-                        "steps": "false"
+                        "steps": "false",
+                        "continue_straight": "true"
                     })
                     if resp.status_code == 200:
                         d = resp.json()
@@ -237,18 +260,24 @@ class RoutingService:
                             cand = d["routes"][0]
                             cand_dist = float(cand.get("distance", 0.0))
                             cand_dur = float(cand.get("duration", 0.0))
+                            coords = cand.get("geometry", {}).get("coordinates", [])
 
-                            # Quality Gate 1: Reject absurdly long or tortuous routes
-                            if base_dist > 0 and (cand_dist > base_dist * 1.85 or cand_dur > base_dur * 2.2):
+                            # Quality Gate 1: Reject long detours (> 1.35x distance or > 1.45x duration)
+                            if base_dist > 0 and (cand_dist > base_dist * 1.35 or cand_dur > base_dur * 1.45):
                                 continue
 
-                            # Quality Gate 2: Uniqueness check (at least 5% variance from existing corridors)
+                            # Quality Gate 2: Mathematical anti-backtracking and loop verification
+                            if not self._is_clean_highway_geometry(coords):
+                                logger.debug(f"Rejected corridor via {road_name} due to trajectory backtracking/looping.")
+                                continue
+
+                            # Quality Gate 3: Uniqueness check (at least 3.5% variance from existing corridors)
                             all_dists = [float(r.get("distance", 0.0)) for r in existing_routes + new_routes]
-                            is_duplicate = any(abs(cand_dist - ed) / max(1.0, ed) < 0.05 for ed in all_dists)
+                            is_duplicate = any(abs(cand_dist - ed) / max(1.0, ed) < 0.035 for ed in all_dists)
 
                             if not is_duplicate and cand_dist > 0:
                                 logger.info(
-                                    f"Synthesized high-quality bypass corridor via {road_name}: "
+                                    f"Synthesized clean highway corridor via {road_name}: "
                                     f"{cand_dist/1000.0:.1f} km ({cand_dur/60.0:.1f} min)"
                                 )
                                 new_routes.append(cand)
@@ -257,5 +286,46 @@ class RoutingService:
 
         return new_routes
 
+    def _is_clean_highway_geometry(self, coords: List[List[float]]) -> bool:
+        """
+        Verify that a route geometry is a smooth forward highway path without
+        self-intersection, hairpin spurs, or 180-degree backtracking.
+        """
+        import math
+        if len(coords) < 8:
+            return True
+
+        # Sample points along route to check for opposite heading overlap
+        step = max(1, len(coords) // 40)
+        sampled = coords[::step]
+        n = len(sampled)
+
+        for i in range(n - 1):
+            p1 = sampled[i]
+            p2 = sampled[i + 1]
+            v1_x = p2[0] - p1[0]
+            v1_y = p2[1] - p1[1]
+            len1 = math.hypot(v1_x, v1_y)
+            if len1 < 1e-5:
+                continue
+
+            for j in range(i + 4, n - 1):
+                p3 = sampled[j]
+                p4 = sampled[j + 1]
+
+                # Check if distant parts of route are too close (< 250m) in opposite directions
+                dist_pts = math.hypot(p3[0] - p1[0], p3[1] - p1[1])
+                if dist_pts < 0.0025:  # ~250m
+                    v2_x = p4[0] - p3[0]
+                    v2_y = p4[1] - p3[1]
+                    len2 = math.hypot(v2_x, v2_y)
+                    if len2 > 1e-5:
+                        dot = (v1_x * v2_x + v1_y * v2_y) / (len1 * len2)
+                        if dot < -0.55:  # Route is doubling back along the exact same roadway
+                            return False
+
+        return True
+
 
 routing_service = RoutingService()
+
