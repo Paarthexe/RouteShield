@@ -241,20 +241,25 @@ export default function LocationInput({
         </div>
 
         {/* Sampling Interval Selector */}
-        <div className="flex items-center justify-between pt-1 border-t border-zinc-800/80">
-          <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-mono">
-            <SlidersHorizontal className="h-3 w-3 text-zinc-500" />
-            <span>Sample Density</span>
+        <div className="space-y-1 pt-1 border-t border-zinc-800/80">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-mono">
+              <SlidersHorizontal className="h-3 w-3 text-zinc-500" />
+              <span>Sample Density</span>
+            </div>
+            <select
+              value={sampleInterval}
+              onChange={(e) => setSampleInterval(Number(e.target.value))}
+              className="bg-zinc-950 border border-zinc-750 rounded px-2 py-1 text-[11px] font-mono text-zinc-200 focus:outline-none focus:border-sky-500"
+            >
+              <option value={250}>250m (4 probes/km - High Res)</option>
+              <option value={500}>500m (2 probes/km - Standard)</option>
+              <option value={1000}>1000m (1 probe/km - Fast)</option>
+            </select>
           </div>
-          <select
-            value={sampleInterval}
-            onChange={(e) => setSampleInterval(Number(e.target.value))}
-            className="bg-zinc-950 border border-zinc-750 rounded px-2 py-1 text-[11px] font-mono text-zinc-200 focus:outline-none focus:border-sky-500"
-          >
-            <option value={250}>250m (High resolution)</option>
-            <option value={500}>500m (Standard)</option>
-            <option value={1000}>1000m (Sparse)</option>
-          </select>
+          <p className="text-[10px] text-zinc-500 font-mono text-right">
+            {sampleInterval === 250 ? 'Deep micro-terrain & bridge scan' : sampleInterval === 500 ? 'Standard balanced disaster reconnaissance' : 'Rapid corridor baseline scan'}
+          </p>
         </div>
 
         {/* Submit Button */}

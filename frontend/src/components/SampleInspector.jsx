@@ -33,13 +33,22 @@ export default function SampleInspector({ sample, onClose }) {
           <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
             Sample Point Inspector
           </h4>
-          <div className="flex items-center gap-2">
-            <p className="text-[11px] text-cyan-400 font-mono">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-[11px] text-cyan-400 font-mono font-bold">
               {sample.sample_id}
             </p>
             {isMireyeProbed && (
-              <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700 font-mono">
-                Mireye Sample
+              <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700 font-mono font-bold">
+                Mireye Probe
+              </span>
+            )}
+            {hazardScore != null && (
+              <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono font-bold ${
+                hazardScore > 0.5 ? 'bg-rose-950 text-rose-300 border-rose-700' :
+                hazardScore > 0.3 ? 'bg-amber-950 text-amber-300 border-amber-700' :
+                'bg-emerald-950 text-emerald-300 border-emerald-700'
+              }`}>
+                Hazard Score: {(hazardScore * 100).toFixed(0)}%
               </span>
             )}
           </div>

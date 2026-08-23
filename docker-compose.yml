@@ -1,0 +1,26 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - MIREYE_API_KEY=${MIREYE_API_KEY:-}
+      - OSRM_BASE_URL=${OSRM_BASE_URL:-http://router.project-osrm.org}
+    volumes:
+      - ./data:/app/data
+      - ./2025AllStatesNoDelimiterAllRecords.txt:/app/2025AllStatesNoDelimiterAllRecords.txt:ro
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

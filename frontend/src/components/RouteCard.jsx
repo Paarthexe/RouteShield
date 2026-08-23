@@ -6,6 +6,7 @@ const ROUTE_COLORS = {
   route_2: { border: 'border-purple-500', text: 'text-purple-400', bg: 'bg-purple-500/10', badge: 'bg-purple-500/20 text-purple-300' },
   route_3: { border: 'border-amber-500', text: 'text-amber-400', bg: 'bg-amber-500/10', badge: 'bg-amber-500/20 text-amber-300' },
   route_4: { border: 'border-emerald-500', text: 'text-emerald-400', bg: 'bg-emerald-500/10', badge: 'bg-emerald-500/20 text-emerald-300' },
+  route_5: { border: 'border-rose-500', text: 'text-rose-400', bg: 'bg-rose-500/10', badge: 'bg-rose-500/20 text-rose-300' },
 };
 
 const STATUS_CONFIG = {

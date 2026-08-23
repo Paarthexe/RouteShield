@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import httpx
 from typing import List, Optional
 from fastapi import HTTPException, status
@@ -34,8 +35,7 @@ class RoutingService:
                 detail="No route found between these locations."
             )
 
-        parsed_routes: List[Route] = []
-        for idx, r_data in enumerate(raw_routes):
+        async def _process_single_route(idx: int, r_data: dict) -> Route:
             route_id = f"route_{idx + 1}"
             dist_m = float(r_data.get("distance", 0.0))
             dur_s = float(r_data.get("duration", 0.0))
@@ -68,7 +68,7 @@ class RoutingService:
             valid_ages = [b["age_years"] for b in bridge_list if b.get("age_years") is not None]
             avg_age = round(sum(valid_ages) / len(valid_ages), 1) if valid_ages else 0
 
-            route_obj = Route(
+            return Route(
                 route_id=route_id,
                 geometry=geometry,
                 distance_m=round(dist_m, 1),
@@ -87,9 +87,11 @@ class RoutingService:
                     ]
                 }
             )
-            parsed_routes.append(route_obj)
 
-        return parsed_routes
+        # Sample all candidate routes concurrently
+        route_tasks = [_process_single_route(idx, r_data) for idx, r_data in enumerate(raw_routes)]
+        parsed_routes = await asyncio.gather(*route_tasks)
+        return list(parsed_routes)
 
     async def generate_and_analyze(
         self,

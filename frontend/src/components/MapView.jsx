@@ -8,7 +8,10 @@ const ROUTE_LINE_COLORS = {
   route_2: '#a855f7', // Purple
   route_3: '#f59e0b', // Amber
   route_4: '#10b981', // Emerald
+  route_5: '#f43f5e', // Rose
 };
+
+const getRouteColor = (routeId) => ROUTE_LINE_COLORS[routeId] || '#38bdf8';
 
 // Custom Icon Helpers
 const createCustomMarkerIcon = (label, colorBg, borderColor) => {
@@ -455,19 +458,19 @@ export default function MapView({
 
 
 
-        {/* Peak Bottleneck Markers (Top Critical Chokepoints Only - Spaced >= 5km) */}
-        {showSamples && (() => {
+        {/* Peak Bottleneck Markers (Top Critical & Moderate Chokepoints - Spaced >= 5km) */}
+        {(() => {
           const criticalBns = (selectedRouteObj?.bottlenecks || [])
-            .filter(bn => bn.severity_label === 'Critical' || bn.bsi_score >= 0.70)
+            .filter(bn => bn.severity_label === 'Critical' || bn.bsi_score >= 0.40)
             .sort((a, b) => b.bsi_score - a.bsi_score);
 
           // Deduplicate spatially so we only show top distinct chokepoints
           const distinctBns = [];
           for (const bn of criticalBns) {
             const isNear = distinctBns.some(
-              d => Math.hypot(d.latitude - bn.latitude, d.longitude - bn.longitude) < 0.04
+              d => Math.hypot(d.latitude - bn.latitude, d.longitude - bn.longitude) < 0.03
             );
-            if (!isNear && distinctBns.length < 5) {
+            if (!isNear && distinctBns.length < 6) {
               distinctBns.push(bn);
             }
           }
@@ -477,20 +480,33 @@ export default function MapView({
               key={`peak-bn-${idx}`}
               position={[bn.latitude, bn.longitude]}
               icon={createBottleneckIcon(bn.severity_label)}
+              eventHandlers={{
+                click: () => {
+                  if (onSelectSample && selectedRouteObj?.samples) {
+                    const matchedSample = selectedRouteObj.samples.find(s => s.sample_id === bn.sample_id);
+                    if (matchedSample) onSelectSample(matchedSample);
+                  }
+                }
+              }}
             >
               <Popup>
-                <div className="p-1 space-y-1 font-sans text-xs max-w-[220px]">
-                  <span className="text-[10px] font-bold uppercase font-mono text-rose-400 block">
-                    Critical Bottleneck
-                  </span>
-                  <div className="text-[10px] text-slate-300 font-mono">
-                    BSI: <span className="font-bold text-rose-400">{bn.bsi_score.toFixed(2)}</span>
+                <div className="p-1 space-y-1 font-sans text-xs max-w-[240px]">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className={`text-[10px] font-bold uppercase font-mono px-1.5 py-0.5 rounded ${
+                      bn.severity_label === 'Critical' ? 'bg-rose-950 text-rose-300 border border-rose-800' : 'bg-amber-950 text-amber-300 border border-amber-800'
+                    }`}>
+                      {bn.severity_label} Chokepoint
+                    </span>
+                    <span className="text-[10px] font-bold font-mono text-rose-400">
+                      BSI: {bn.bsi_score.toFixed(2)}
+                    </span>
                   </div>
-                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                  <p className="text-[11px] text-slate-200 font-medium leading-tight">
                     {bn.description}
                   </p>
-                  <div className="text-[9px] text-slate-500 font-mono">
-                    {(bn.distance_from_origin_m / 1000).toFixed(1)} km from origin
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-[9px] text-slate-400 font-mono">
+                    <span>Sample: {bn.sample_id}</span>
+                    <span>{(bn.distance_from_origin_m / 1000).toFixed(1)} km along route</span>
                   </div>
                 </div>
               </Popup>
