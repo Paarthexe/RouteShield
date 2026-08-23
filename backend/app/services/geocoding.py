@@ -65,29 +65,27 @@ class GeocodingService:
                 detail="Mireye API key is required for geocoding."
             )
 
-        logger.info(f"Querying Mireye /v1/geocode API for address: '{clean}'")
-        
-        candidate_queries = [clean]
-        if not any(char.isdigit() for char in clean):
-            candidate_queries.append(f"Main St, {clean}")
-            candidate_queries.append(f"City Hall, {clean}")
+        logger.info(f"Resolving location: '{clean}'")
 
-        location = None
-        for q in candidate_queries:
-            location = await self._mireye_geocode(q, original_display=clean)
-            if location:
-                break
+        # Tier 1: Try Mireye /v1/geocode (ideal for street addresses)
+        location = await self._mireye_geocode(clean, original_display=clean)
+
+        # Tier 2: If Mireye returns 404/address_too_coarse (common for cities/places), fallback to Nominatim
+        if not location:
+            location = await self._nominatim_geocode(clean)
 
         if not location:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Could not resolve location with Mireye: '{clean}'"
+                detail=f"Could not resolve location: '{clean}'"
             )
 
         cache_service.set(cache_key, location.model_dump())
         return location
 
     async def _mireye_geocode(self, query: str, original_display: Optional[str] = None) -> Optional[Location]:
+        if not self.mireye_api_key:
+            return None
         try:
             url = f"{self.mireye_base_url}/geocode"
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -118,10 +116,40 @@ class GeocodingService:
                             display_name=display
                         )
                 else:
-                    logger.warning(f"Mireye /v1/geocode returned status {resp.status_code} for '{query}': {resp.text[:120]}")
+                    logger.info(f"Mireye /v1/geocode for '{query}' returned status {resp.status_code} (falling back to place geocoder)")
         except Exception as e:
             logger.warning(f"Mireye /v1/geocode request failed: {e}")
         return None
 
+    async def _nominatim_geocode(self, query: str) -> Optional[Location]:
+        """High-precision city/town/place resolver fallback."""
+        try:
+            headers = {"User-Agent": "RouteShield-Evacuation-Engine/1.0"}
+            async with httpx.AsyncClient(timeout=self.timeout, headers=headers) as client:
+                resp = await client.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={"q": query, "format": "json", "countrycodes": "us", "limit": 1}
+                )
+                if resp.status_code == 200 and resp.json():
+                    item = resp.json()[0]
+                    lat = float(item["lat"])
+                    lon = float(item["lon"])
+                    display_name = item.get("display_name", query)
+                    # Clean up long display name (keep first 3 comma parts)
+                    parts = [p.strip() for p in display_name.split(",")]
+                    short_display = ", ".join(parts[:3]) if len(parts) >= 3 else display_name
+
+                    logger.info(f"Nominatim geocode success: '{query}' -> ({lat:.4f}, {lon:.4f})")
+                    return Location(
+                        query=query,
+                        latitude=lat,
+                        longitude=lon,
+                        display_name=short_display
+                    )
+        except Exception as e:
+            logger.warning(f"Nominatim geocode fallback failed for '{query}': {e}")
+        return None
+
 
 geocoding_service = GeocodingService()
+

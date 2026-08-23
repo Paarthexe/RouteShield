@@ -9,9 +9,9 @@ W_HAZARD_EXPOSURE = 40.0
 W_BOTTLENECK_PENALTY = 25.0
 W_TIME_DELTA = 10.0
 
-# Rejection thresholds
-REJECT_BSI_THRESHOLD = 3.5          # Catastrophic bottleneck threshold
-REJECT_HAZARD_EXPOSURE_PCT = 0.50   # > 50% of samples with hazard_score > 0.5 = auto-reject
+# Rejection thresholds (catastrophic safety gates)
+REJECT_BSI_THRESHOLD = 4.0          # Catastrophic bottleneck threshold
+REJECT_HAZARD_EXPOSURE_PCT = 0.60   # > 60% of corridor under severe hazard = auto-reject
 
 
 def risk_model_metadata() -> dict:
@@ -40,8 +40,9 @@ def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViab
     total_samples = len(samples) if samples else 1
 
     # --- Hazard Exposure Percentage ---
-    hazardous_count = sum(1 for s in samples if (s.hazard_score or 0) > 0.3)
+    hazardous_count = sum(1 for s in samples if (s.hazard_score or 0) > 0.35)
     hazard_exposure_pct = round(hazardous_count / total_samples, 3)
+
 
     # --- Bottleneck Metrics ---
     bottleneck_count = len(bottlenecks)

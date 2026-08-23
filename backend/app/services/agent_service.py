@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 async def run_agent_analysis(
     routes: List[Route],
     origin: Location,
-    destination: Location
+    destination: Location,
+    disaster_type: str = "ALL_HAZARDS"
 ) -> AgentDecision:
     """
     Agentic decision engine: orchestrates bottleneck analysis, viability scoring,
@@ -24,10 +25,11 @@ async def run_agent_analysis(
 
     # --- Step 1: Log corridor count ---
     step_num += 1
+    disaster_label = disaster_type.replace("_", " ").title()
     steps.append(AgentStep(
         step_number=step_num,
         action="Corridor Intake",
-        detail=f"Received {len(routes)} candidate evacuation corridors from {origin.display_name} to {destination.display_name}"
+        detail=f"Received {len(routes)} candidate evacuation corridors from {origin.display_name} to {destination.display_name} under {disaster_label} mode"
     ))
 
     # --- Step 2: Bottleneck Analysis ---
@@ -35,14 +37,14 @@ async def run_agent_analysis(
     total_bottlenecks = 0
     total_critical = 0
     for route in routes:
-        bottlenecks, route = analyze_route_bottlenecks(route)
+        bottlenecks, route = analyze_route_bottlenecks(route, disaster_type=disaster_type)
         total_bottlenecks += len(bottlenecks)
         total_critical += sum(1 for b in bottlenecks if b.severity_label == "Critical")
 
     steps.append(AgentStep(
         step_number=step_num,
         action="Bottleneck Detection",
-        detail=f"Identified {total_bottlenecks} hazard-infrastructure bottlenecks across all corridors ({total_critical} critical)"
+        detail=f"Identified {total_bottlenecks} hazard-infrastructure bottlenecks across all corridors ({total_critical} critical) calibrated for {disaster_label}"
     ))
 
     # --- Step 3: Viability Scoring ---
@@ -57,7 +59,7 @@ async def run_agent_analysis(
     steps.append(AgentStep(
         step_number=step_num,
         action="Viability Assessment",
-        detail=f"Computed viability scores — {score_summary}"
+        detail=f"Computed viability scores: {score_summary}"
     ))
 
     # --- Step 4: Route Ranking ---
@@ -87,7 +89,7 @@ async def run_agent_analysis(
     elif backup_independence:
         ranking_detail.append(f"NO INDEPENDENT BACKUP: {backup_independence.explanation}")
     for r in rejected:
-        ranking_detail.append(f"REJECTED: {r.route_id} — {'; '.join(r.viability.rejection_reasons)}")
+        ranking_detail.append(f"REJECTED: {r.route_id} ({'; '.join(r.viability.rejection_reasons)})")
 
     steps.append(AgentStep(
         step_number=step_num,
@@ -111,7 +113,7 @@ async def run_agent_analysis(
                 worst_route_id = route.route_id
 
     if worst_bottleneck and worst_bsi >= 0.35:
-        question = _build_ask_question(worst_bottleneck, worst_route_id, origin, destination, routes)
+        question = _build_ask_question(worst_bottleneck, worst_route_id, origin, destination, routes, disaster_type=disaster_type)
         try:
             insight = await mireye_data_service.ask_question(
                 worst_bottleneck.latitude,
@@ -129,7 +131,7 @@ async def run_agent_analysis(
                 steps.append(AgentStep(
                     step_number=step_num,
                     action="Mireye Deep Analysis",
-                    detail=f"Attempted Mireye /v1/ask at bottleneck on {worst_route_id} — no response (API key may be missing or rate-limited)"
+                    detail=f"Attempted Mireye /v1/ask at bottleneck on {worst_route_id} (no response or unconfigured key)"
                 ))
         except Exception as e:
             logger.warning(f"Agent: Mireye /v1/ask failed: {e}")
@@ -142,13 +144,13 @@ async def run_agent_analysis(
         steps.append(AgentStep(
             step_number=step_num,
             action="Mireye Deep Analysis",
-            detail="No significant bottlenecks detected — Mireye deep probe not required"
+            detail="No severe bottleneck found - Mireye deep probe not required"
         ))
 
     # --- Step 6: Generate Executive Summary ---
     step_num += 1
     executive_summary = _generate_executive_summary(
-        routes, primary, backup, rejected, origin, destination
+        routes, primary, backup, rejected, origin, destination, disaster_type=disaster_type
     )
     trade_off_explanation = _generate_trade_off(
         routes, primary, backup, rejected, fastest_duration
@@ -174,9 +176,10 @@ async def run_agent_analysis(
         backup_independence=backup_independence,
         risk_model=risk_model_metadata(),
         evidence_coverage=_build_evidence_coverage(routes),
+        disaster_type=disaster_type
     )
 
-    logger.info(f"Agent Decision: Primary={decision.primary_route_id}, Backup={decision.backup_route_id}")
+    logger.info(f"Agent Decision [{disaster_type}]: Primary={decision.primary_route_id}, Backup={decision.backup_route_id}")
     return decision
 
 
@@ -201,10 +204,9 @@ def _build_evidence_coverage(routes: List[Route]) -> dict:
 
 
 
-def _build_ask_question(bottleneck, route_id: str, origin, destination, routes: list) -> str:
+def _build_ask_question(bottleneck, route_id: str, origin, destination, routes: list, disaster_type: str = "ALL_HAZARDS") -> str:
     """
-    Build a hazard-type-specific /v1/ask prompt based on the dominant signal
-    that drove this bottleneck's BSI score.
+    Build a hazard-type-specific /v1/ask prompt tailored directly to the active disaster protocol.
     """
     mireye = {}
     for route in routes:
@@ -216,66 +218,68 @@ def _build_ask_question(bottleneck, route_id: str, origin, destination, routes: 
     corridor = f"evacuation corridor between {origin.display_name} and {destination.display_name}"
 
     fhsz = mireye.get("fire_hazard_zone")
-    wf_freq = mireye.get("wildfire_annual_freq", 0) or 0
     is_floodplain = mireye.get("within_floodplain") is True
     dam_hazard = mireye.get("nearest_dam_hazard")
     dam_dist = mireye.get("nearest_dam_distance_m")
     pga = mireye.get("seismic_pga_g", 0) or 0
     ls = mireye.get("landslide_susceptibility", 0) or 0
     burn_perimeter = mireye.get("nearest_fire_perimeter_m", float("inf"))
+    burn_year = mireye.get("most_recent_burn_year")
+    flood_zone = mireye.get("fema_flood_zone", "")
 
-    # Wildfire dominant
-    if fhsz in ("Very High", "High") or burn_perimeter < 100 or wf_freq >= 0.001:
-        burn_year = mireye.get("most_recent_burn_year")
-        burn_note = f" It was within the {burn_year} burn perimeter." if burn_year else ""
+    # Disaster-specific prompt tailoring
+    if disaster_type == "WILDFIRE":
+        burn_note = f" Historical burn perimeter from {burn_year} was recorded within {burn_perimeter:.0f}m." if burn_year else ""
         return (
-            f"What are the wildfire evacuation risks and road accessibility challenges "
-            f"at this coordinate?{burn_note} Specifically: what is the CAL FIRE hazard "
-            f"classification, what are the primary egress routes, and how did past fire "
-            f"events affect road closures in this area? This is a critical segment of the "
-            f"{corridor}."
+            f"During an active wildfire evacuation along the {corridor}, what are the fire perimeter expansion risks, "
+            f"CAL FIRE severity zone classifications ({fhsz or 'High'}), and roadway accessibility challenges at this coordinate?{burn_note} "
+            f"Specifically evaluate flame impingement risk on highway egress corridors and historical road closure precedents."
         )
 
-    # Flood + dam dominant
-    if is_floodplain or (dam_hazard == "High" and dam_dist is not None and dam_dist < 5000):
-        dam_note = f" A High-hazard dam is {dam_dist:.0f}m away." if dam_hazard == "High" and dam_dist else ""
+    if disaster_type == "FLOOD_HURRICANE":
+        dam_note = f" A High-hazard dam is located {dam_dist:.0f}m upstream." if dam_hazard == "High" and dam_dist else ""
+        zone_note = f" (FEMA Flood Zone {flood_zone})" if flood_zone else ""
         return (
-            f"What are the flood inundation and bridge scour risks at this coordinate "
-            f"during a major storm or dam failure event?{dam_note} "
-            f"Include FEMA flood zone classification, historical flood records, "
-            f"and any bridge vulnerability at this river crossing. "
-            f"This is a critical segment of the {corridor}."
+            f"During a major flood or hurricane storm surge event along the {corridor}, what are the water inundation depths{zone_note}, "
+            f"bridge abutment scour vulnerabilities, and road wash-out risks at this coordinate?{dam_note} "
+            f"Include historical flood records and emergency vehicle accessibility."
         )
 
-    # Seismic dominant
-    if pga >= 0.3:
+    if disaster_type == "EARTHQUAKE":
         sdc = mireye.get("seismic_design_category", "")
         sdc_note = f" (ASCE 7 Seismic Design Category {sdc})" if sdc else ""
         return (
-            f"What are the seismic risks and infrastructure vulnerabilities "
-            f"at this coordinate{sdc_note}? Consider proximity to active fault lines, "
-            f"soil liquefaction potential, and the condition of any bridges or overpasses "
-            f"along this section. PGA is {pga:.2f}g. "
-            f"This is a critical segment of the {corridor}."
+            f"Following a major earthquake (Peak Ground Acceleration {pga:.2f}g){sdc_note} along the {corridor}, "
+            f"what are the structural failure risks for bridges, highway overpasses, and soil liquefaction at this coordinate? "
+            f"Identify whether this section is vulnerable to post-earthquake structural collapse or blockage."
         )
 
-    # Landslide dominant
-    if ls >= 40:
+    if disaster_type == "LANDSLIDE":
         return (
-            f"What are the landslide and terrain stability risks at this coordinate "
-            f"(USGS landslide susceptibility index {ls}/100)? "
-            f"Consider slope instability, soil type, historical slide events, "
-            f"and whether road cut sections pose closure risk. "
+            f"During heavy rain or ground saturation triggering debris flows along the {corridor}, what is the slope instability "
+            f"and landslide risk (USGS landslide susceptibility index {ls}/100) at this coordinate? "
+            f"Evaluate steep road cuts, embankment failure history, and rockfall hazards."
+        )
+
+    # All Hazards / Fallback
+    if fhsz in ("Very High", "High") or burn_perimeter < 100:
+        return (
+            f"What are the wildfire evacuation risks and road accessibility challenges at this coordinate? "
+            f"CAL FIRE classification is {fhsz or 'High'}. This is a critical segment of the {corridor}."
+        )
+
+    if is_floodplain or (dam_hazard == "High" and dam_dist is not None and dam_dist < 5000):
+        dam_note = f" A High-hazard dam is {dam_dist:.0f}m away." if dam_hazard == "High" and dam_dist else ""
+        return (
+            f"What are the flood inundation and bridge scour risks at this coordinate during an emergency?{dam_note} "
             f"This is a critical segment of the {corridor}."
         )
 
-    # Generic fallback
     return (
-        f"What are the primary natural hazard risks — flood, wildfire, seismic, "
-        f"and terrain stability — at this coordinate? Focus on factors most likely "
-        f"to cause road closure or structural failure during emergency evacuation. "
-        f"This is a critical segment of the {corridor}."
+        f"What are the primary natural hazard risks (flood, wildfire, seismic, and terrain stability) at this coordinate? "
+        f"Focus on factors most likely to cause road closure or structural failure during emergency evacuation along the {corridor}."
     )
+
 
 def _generate_executive_summary(
     routes: List[Route],
@@ -283,14 +287,16 @@ def _generate_executive_summary(
     backup: Optional[Route],
     rejected: List[Route],
     origin: Location,
-    destination: Location
+    destination: Location,
+    disaster_type: str = "ALL_HAZARDS"
 ) -> str:
     """Generate a concise executive summary of the evacuation route decision."""
     parts = []
+    disaster_label = disaster_type.replace("_", " ").title()
 
     parts.append(
-        f"RouteShield analyzed {len(routes)} candidate evacuation corridor(s) "
-        f"from {origin.display_name} to {destination.display_name}."
+        f"RouteShield evaluated {len(routes)} candidate corridor(s) "
+        f"from {origin.display_name} to {destination.display_name} under {disaster_label} evacuation protocol."
     )
 
     if primary and primary.viability:
@@ -311,14 +317,14 @@ def _generate_executive_summary(
         parts.append(
             f"BACKUP: {backup.route_id.upper().replace('_', ' ')} "
             f"({backup.distance_km} km, {backup.travel_time_min} min, "
-            f"+{time_diff} min vs primary) — Viability: {v.score:.0f}/100."
+            f"+{time_diff} min vs primary) - Viability: {v.score:.0f}/100."
         )
 
     for r in rejected:
         if r.viability:
             reasons = "; ".join(r.viability.rejection_reasons)
             parts.append(
-                f"REJECTED: {r.route_id.upper().replace('_', ' ')} — {reasons}."
+                f"REJECTED: {r.route_id.upper().replace('_', ' ')} - {reasons}."
             )
 
     return " ".join(parts)
@@ -345,7 +351,7 @@ def _generate_trade_off(
             f"No speed-safety trade-off is required."
         )
 
-    # Primary is NOT the fastest — explain the trade-off
+    # Primary is NOT the fastest - explain the trade-off
     if fastest_route:
         time_penalty = round(primary.travel_time_min - fastest_route.travel_time_min, 1)
         fastest_v = fastest_route.viability
@@ -369,7 +375,7 @@ def _generate_trade_off(
             f"The recommended corridor ({primary.route_id.upper().replace('_', ' ')}) "
             f"adds {time_penalty:+.1f} min of travel time but achieves a viability score of "
             f"{primary.viability.score:.0f}/100 with {primary.viability.critical_bottleneck_count} "
-            f"critical bottleneck(s) — a safer evacuation path."
+            f"critical bottleneck(s) - a safer evacuation path."
         )
 
         return "".join(parts)
@@ -378,3 +384,4 @@ def _generate_trade_off(
         f"Primary corridor {primary.route_id.upper().replace('_', ' ')} selected with "
         f"viability score {primary.viability.score:.0f}/100."
     )
+

@@ -18,11 +18,13 @@ export default function App() {
   const [destination, setDestination] = useState('');
   const [waypoints, setWaypoints] = useState([]);
   const [sampleInterval, setSampleInterval] = useState(500);
+  const [disasterType, setDisasterType] = useState('ALL_HAZARDS');
   const [loading, setLoading] = useState(false);
   const [analysisData, setAnalysisData] = useState(null);
   const [selectedRouteId, setSelectedRouteId] = useState('route_1');
-  const [showSamples, setShowSamples] = useState(true);
+  const [showSamples, setShowSamples] = useState(false);
   const [selectedSample, setSelectedSample] = useState(null);
+
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [pickerMode, setPickerMode] = useState(null);
@@ -109,7 +111,7 @@ export default function App() {
     setSelectedSample(null);
 
     try {
-      const data = await analyzeRoutes(origin, destination, sampleInterval, waypoints);
+      const data = await analyzeRoutes(origin, destination, sampleInterval, waypoints, disasterType);
       setAnalysisData(data);
 
       if (data.agent_decision && data.agent_decision.primary_route_id) {
@@ -150,11 +152,14 @@ export default function App() {
             setWaypoints={setWaypoints}
             sampleInterval={sampleInterval}
             setSampleInterval={setSampleInterval}
+            disasterType={disasterType}
+            setDisasterType={setDisasterType}
             onAnalyze={handleAnalyze}
             loading={loading}
             pickerMode={pickerMode}
             setPickerMode={setPickerMode}
           />
+
 
           <AnalysisTrace loading={loading} analysisData={analysisData} error={error} />
 

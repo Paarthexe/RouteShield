@@ -48,7 +48,10 @@ class NBIService:
                     adt INT,
                     deck_condition TEXT,
                     super_condition TEXT,
-                    sub_condition TEXT
+                    sub_condition TEXT,
+                    channel_condition TEXT,
+                    culvert_condition TEXT,
+                    sufficiency_rating REAL
                 )
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_lat_lon ON bridges(latitude, longitude)")
@@ -91,15 +94,26 @@ class NBIService:
                             adt_raw = line[164:170].strip()
                             adt = int(adt_raw) if adt_raw.isdigit() else 0
 
-                            deck = line[268:269] if len(line) > 268 else ""
-                            super_cond = line[269:270] if len(line) > 269 else ""
-                            sub_cond = line[270:271] if len(line) > 270 else ""
+                            # Component Condition Ratings (0-9 scale, N = Not Applicable)
+                            deck = line[268:269].strip() if len(line) > 268 else ""
+                            super_cond = line[269:270].strip() if len(line) > 269 else ""
+                            sub_cond = line[270:271].strip() if len(line) > 270 else ""
+                            channel_cond = line[271:272].strip() if len(line) > 271 else ""
+                            culvert_cond = line[272:273].strip() if len(line) > 272 else ""
+
+                            # Sufficiency Rating (Item 66, cols 343-347, 0.0-100.0)
+                            sr_raw = line[342:346].strip() if len(line) >= 346 else ""
+                            try:
+                                sufficiency = float(sr_raw) / 10.0 if sr_raw.isdigit() else None
+                            except Exception:
+                                sufficiency = None
 
                             batch.append((
                                 state, struct, location, facility,
                                 round(lat, 6), round(lon, 6),
                                 year_built, adt,
-                                deck, super_cond, sub_cond
+                                deck, super_cond, sub_cond,
+                                channel_cond, culvert_cond, sufficiency
                             ))
                             records_count += 1
 
@@ -108,8 +122,9 @@ class NBIService:
                                     INSERT INTO bridges (
                                         state_code, structure_id, location, facility,
                                         latitude, longitude, year_built, adt,
-                                        deck_condition, super_condition, sub_condition
-                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        deck_condition, super_condition, sub_condition,
+                                        channel_condition, culvert_condition, sufficiency_rating
+                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 """, batch)
                                 conn.commit()
                                 batch.clear()
@@ -119,8 +134,9 @@ class NBIService:
                     INSERT INTO bridges (
                         state_code, structure_id, location, facility,
                         latitude, longitude, year_built, adt,
-                        deck_condition, super_condition, sub_condition
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        deck_condition, super_condition, sub_condition,
+                        channel_condition, culvert_condition, sufficiency_rating
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, batch)
                 conn.commit()
 
@@ -157,14 +173,35 @@ class NBIService:
                             current_year = 2026
                             year_built = b_dict.get("year_built")
                             b_dict["age_years"] = (current_year - year_built) if year_built else None
-                            
-                            deck = b_dict.get("deck_condition", "")
-                            b_dict["condition_label"] = (
-                                "Poor (<5)" if deck in ["1", "2", "3", "4"] 
-                                else "Fair (5-6)" if deck in ["5", "6"] 
-                                else "Good (7+)" if deck in ["7", "8", "9"]
-                                else "Unknown"
-                            )
+
+                            deck = str(b_dict.get("deck_condition", "")).strip()
+                            super_c = str(b_dict.get("super_condition", "")).strip()
+                            sub_c = str(b_dict.get("sub_condition", "")).strip()
+                            channel_c = str(b_dict.get("channel_condition", "")).strip()
+                            culvert_c = str(b_dict.get("culvert_condition", "")).strip()
+
+                            # Component numeric ratings (0-9)
+                            component_ratings = [
+                                int(c) for c in [deck, super_c, sub_c, channel_c, culvert_c] if c.isdigit()
+                            ]
+
+                            is_deficient = False
+                            if component_ratings:
+                                min_rating = min(component_ratings)
+                                if min_rating <= 4:
+                                    is_deficient = True
+                                    cond_label = f"Poor / Deficient ({min_rating}/9)"
+                                elif min_rating <= 6:
+                                    cond_label = f"Fair ({min_rating}/9)"
+                                else:
+                                    cond_label = f"Good ({min_rating}/9)"
+                            elif deck == "N" or culvert_c == "N":
+                                cond_label = "Culvert / Enclosed (N)"
+                            else:
+                                cond_label = "Unrated / In Service"
+
+                            b_dict["structurally_deficient"] = is_deficient
+                            b_dict["condition_label"] = cond_label
                             nearby.append(b_dict)
 
                 nearby.sort(key=lambda x: x["distance_to_sample_m"])
@@ -177,36 +214,56 @@ class NBIService:
 
     def _generate_fallback_bridges(self, lat: float, lon: float, radius_m: float = 500.0) -> List[Dict[str, Any]]:
         import hashlib
-        # Create a spatial grid key every ~3-5km
         grid_lat = round(lat, 2)
         grid_lon = round(lon, 2)
         key = f"{grid_lat},{grid_lon}"
         h = int(hashlib.md5(key.encode()).hexdigest(), 16)
 
-        # ~35% of sample regions contain a bridge structure
-        if (h % 100) > 35:
+        # ~12% of sample regions contain a major bridge structure (realistic spacing)
+        if (h % 100) > 12:
             return []
 
+
         struct_num = (h % 89999) + 10000
-        year_built = 1960 + (h % 58) # Years between 1960 and 2018
+        year_built = 1960 + (h % 58)  # 1960 - 2018
         current_year = 2026
         age_years = current_year - year_built
 
-        # Deck conditions: 20% Poor (4), 40% Fair (5-6), 40% Good (7-8)
         deck_val = h % 10
         if deck_val < 2:
             deck_code = "4"
-            cond_label = "Poor (<5)"
+            super_code = "4"
+            sub_code = "3"
+            channel_code = "4"
+            culvert_code = "N"
+            sufficiency = round(38.0 + (h % 12), 1)
+            cond_label = "Poor / Deficient (4/9)"
+            is_deficient = True
         elif deck_val < 6:
             deck_code = "5" if deck_val % 2 == 0 else "6"
-            cond_label = "Fair (5-6)"
+            super_code = "6"
+            sub_code = "5"
+            channel_code = "6"
+            culvert_code = "N"
+            sufficiency = round(64.0 + (h % 15), 1)
+            cond_label = f"Fair ({deck_code}/9)"
+            is_deficient = False
         else:
             deck_code = "7" if deck_val % 2 == 0 else "8"
-            cond_label = "Good (7+)"
+            super_code = "8"
+            sub_code = "7"
+            channel_code = "8"
+            culvert_code = "N"
+            sufficiency = round(85.0 + (h % 12), 1)
+            cond_label = f"Good ({deck_code}/9)"
+            is_deficient = False
 
-        facilities = ["I-40 Highway Overpass", "State Route Bridge", "River Corridor Crossing", "Valley Connector Bridge"]
+        facilities = [
+            "I-40 Highway Overpass", "State Route River Bridge",
+            "River Corridor Crossing", "Valley Connector Bridge",
+            "Canyon Creek Overpass"
+        ]
         facility = facilities[h % len(facilities)]
-
         dist_m = round(35.0 + (h % 180), 1)
 
         return [
@@ -222,8 +279,12 @@ class NBIService:
                 "age_years": age_years,
                 "adt": 12000 + (h % 48000),
                 "deck_condition": deck_code,
-                "super_condition": deck_code,
-                "sub_condition": deck_code,
+                "super_condition": super_code,
+                "sub_condition": sub_code,
+                "channel_condition": channel_code,
+                "culvert_condition": culvert_code,
+                "sufficiency_rating": sufficiency,
+                "structurally_deficient": is_deficient,
                 "condition_label": cond_label,
                 "distance_to_sample_m": dist_m
             }
@@ -231,4 +292,5 @@ class NBIService:
 
 
 nbi_service = NBIService()
+
 

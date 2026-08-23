@@ -123,15 +123,16 @@ export default function AgentBriefing({ agentDecision }) {
         <div className="bg-zinc-950 border border-emerald-900/40 rounded-lg p-2">
           <span className="text-[10px] text-emerald-400 font-bold block mb-0.5">PRIMARY</span>
           <span className="text-zinc-200 font-semibold">
-            {primary_route_id ? primary_route_id.toUpperCase().replace('_', ' ') : '—'}
+            {primary_route_id ? primary_route_id.toUpperCase().replace('_', ' ') : '-'}
           </span>
         </div>
         <div className="bg-zinc-950 border border-blue-900/40 rounded-lg p-2">
           <span className="text-[10px] text-blue-400 font-bold block mb-0.5">BACKUP</span>
           <span className="text-zinc-200 font-semibold">
-            {backup_route_id ? backup_route_id.toUpperCase().replace('_', ' ') : '—'}
+            {backup_route_id ? backup_route_id.toUpperCase().replace('_', ' ') : '-'}
           </span>
         </div>
+
         <div className="bg-zinc-950 border border-rose-900/40 rounded-lg p-2">
           <span className="text-[10px] text-rose-400 font-bold block mb-0.5">HIGH RISK</span>
           <span className="text-zinc-200 font-semibold truncate block" title={rejected_route_ids.join(', ')}>

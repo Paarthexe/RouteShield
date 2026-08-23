@@ -52,8 +52,9 @@ export default function AnalysisTrace({ loading, analysisData, error }) {
         })}
       </ol>
       <p className="mt-3 border-t border-slate-800 pt-3 text-[11px] leading-relaxed text-slate-500">
-        RouteShield exposes the deterministic evidence and decision trace so every recommendation—or no-viable-route result—can be audited.
+        RouteShield exposes the deterministic evidence and decision trace so every recommendation or no-viable-route result can be audited.
       </p>
+
     </section>
   );
 }

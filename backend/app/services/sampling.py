@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from typing import List, Tuple, Set
+from typing import List, Tuple, Set, Dict, Any, Optional
 from app.models.route_models import GeoJSONLineString, RouteSample
 from app.utils.geo import haversine_distance, interpolate_coordinate
 from app.services.nbi_service import nbi_service
@@ -10,12 +10,14 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class SamplingService:
     async def sample_route(
         self,
         route_id: str,
         geometry: GeoJSONLineString,
-        interval_m: float = 500.0
+        interval_m: float = 500.0,
+        disaster_type: str = "ALL_HAZARDS"
     ) -> List[RouteSample]:
         coords = geometry.coordinates
         if not coords:
@@ -89,7 +91,7 @@ class SamplingService:
             nbi_results.append(nbi_service.get_nearby_bridges(lat, lon, radius_m=300.0))
 
         # ====================================================================
-        # PHASE 4: Compute slopes + Select 4 critical points for Mireye
+        # PHASE 4: Compute slopes + Select critical points for Mireye
         # ====================================================================
         # Build elevation array and compute slopes
         elevations = []
@@ -105,23 +107,22 @@ class SamplingService:
             if elev_prev is not None and elev_curr is not None:
                 dist_between = point_targets[idx][2] - point_targets[idx - 1][2]
                 if dist_between > 0:
-                    slopes[idx] = round(((elev_curr - elev_prev) / dist_between) * 100.0, 2)
+                    raw_slope = ((elev_curr - elev_prev) / dist_between) * 100.0
+                    # Clamp unrealistic single-point DEM elevation jumps (cap at ±30% grade)
+                    slopes[idx] = round(max(-30.0, min(30.0, raw_slope)), 2)
 
-        # Smart critical point selection
+        # Smart critical point selection tailored to disaster type
         critical_indices = self._select_critical_points(
-            point_targets, nbi_results, elevations, slopes
+            point_targets, nbi_results, elevations, slopes, disaster_type=disaster_type
         )
 
         logger.info(
-            f"Route {route_id}: Selected {len(critical_indices)} critical points "
+            f"Route {route_id} [{disaster_type}]: Selected {len(critical_indices)} critical points "
             f"for Mireye deep probe at indices {list(critical_indices)}"
         )
 
         # ====================================================================
-        # PHASE 5: Mireye /v1/fetch on critical points (two-preset strategy)
-        # - All critical points: natural_hazard preset (seismic, wildfire, etc.)
-        # - Low-elevation points (elev < 50m): additional flood_risk preset call
-        #   to get fema_flood_zone code, intersects_nhd_area, wetland data, etc.
+        # PHASE 5: Mireye /v1/fetch on critical points (disaster-aware strategy)
         # ====================================================================
         semaphore = asyncio.Semaphore(settings.MIREYE_MAX_CONCURRENCY)
         mireye_results = {}
@@ -137,16 +138,17 @@ class SamplingService:
                 result = await mireye_data_service.fetch_location_facts(lat, lon, preset=preset)
                 return idx, result
 
-        # Primary: natural_hazard preset for all critical points
+        # Primary: natural_hazard preset for critical points
         mireye_tasks = [
             fetch_mireye(idx, point_targets[idx][0], point_targets[idx][1], "natural_hazard")
             for idx in critical_indices
         ]
-        # Secondary: flood_risk preset for low-elevation points (merges richer flood fields)
+        # Secondary: flood_risk preset for low-elevation points
         flood_tasks = [
             fetch_mireye(idx, point_targets[idx][0], point_targets[idx][1], "flood_risk")
             for idx in low_elev_indices
         ]
+
 
         all_tasks = mireye_tasks + flood_tasks
         if all_tasks:
@@ -212,9 +214,10 @@ class SamplingService:
     def _select_critical_points(
         self,
         point_targets: List[Tuple[float, float, float]],
-        nbi_results: List[list],
-        elevations: List[float],
-        slopes: List[float]
+        nbi_results: List[List[Dict[str, Any]]],
+        elevations: List[Optional[float]],
+        slopes: List[Optional[float]],
+        disaster_type: str = "ALL_HAZARDS"
     ) -> Set[int]:
         """
         Select up to the configured maximum critical indices for Mireye deep probing.
@@ -233,7 +236,11 @@ class SamplingService:
 
         selected: Set[int] = set()
 
-        # 1. Worst bridge condition
+
+        def is_too_close(candidate: int, min_gap: int = 2) -> bool:
+            return any(abs(candidate - s) < min_gap for s in selected)
+
+        # 1. Worst bridge condition (prioritized heavily in EARTHQUAKE or ALL_HAZARDS)
         worst_bridge_idx = None
         worst_bridge_score = -1.0
         for idx, bridges in enumerate(nbi_results):
@@ -244,46 +251,51 @@ class SamplingService:
                 score = 0.0
                 if deck.isdigit():
                     score = 10.0 - float(deck)  # Lower condition = higher score
+                if b.get("structurally_deficient"):
+                    score += 4.0
                 age = b.get("age_years")
                 if age and age > 50:
                     score += 2.0
                 if score > worst_bridge_score:
                     worst_bridge_score = score
                     worst_bridge_idx = idx
-        if worst_bridge_idx is not None:
+        if worst_bridge_idx is not None and not is_too_close(worst_bridge_idx):
             selected.add(worst_bridge_idx)
 
-        # 2. Steepest absolute slope
+        # 2. Steepest slope (prioritized heavily in LANDSLIDE or WILDFIRE)
         steepest_idx = None
         steepest_val = 0.0
         for idx, s in enumerate(slopes):
             if s is not None and abs(s) > steepest_val and idx not in selected:
-                steepest_val = abs(s)
-                steepest_idx = idx
+                if not is_too_close(idx):
+                    steepest_val = abs(s)
+                    steepest_idx = idx
         if steepest_idx is not None:
             selected.add(steepest_idx)
 
-        # 3. Lowest elevation (flood plain)
+        # 3. Lowest elevation / flood plain (prioritized heavily in FLOOD_HURRICANE)
         lowest_idx = None
         lowest_elev = float('inf')
         for idx, e in enumerate(elevations):
             if e is not None and e < lowest_elev and idx not in selected:
-                lowest_elev = e
-                lowest_idx = idx
+                if not is_too_close(idx):
+                    lowest_elev = e
+                    lowest_idx = idx
         if lowest_idx is not None:
             selected.add(lowest_idx)
 
-        # 4. Midpoint of route
-        mid_idx = n // 2
-        if mid_idx not in selected:
-            selected.add(mid_idx)
+        # 4. Route Waypoints (Quarter points & Midpoint)
+        for frac in [0.25, 0.50, 0.75]:
+            q_idx = int(n * frac)
+            if q_idx not in selected and not is_too_close(q_idx, min_gap=1):
+                selected.add(q_idx)
 
-        # 5. Top pre-BSI estimate: bridge_vuln * terrain_penalty * elevation_risk
-        # (uses only Open-Meteo + NBI data, no Mireye required)
+        # 5. Top pre-BSI estimate tailored to disaster type
         pre_bsi_scores = []
         for idx in range(n):
             if idx in selected:
                 continue
+
             # Bridge vulnerability heuristic
             bridges = nbi_results[idx] or []
             b_vuln = 0.0
@@ -291,21 +303,42 @@ class SamplingService:
                 deck = str(b.get("deck_condition", "")).strip()
                 if deck.isdigit():
                     cond = float(deck)
-                    if cond <= 4:
-                        b_vuln = max(b_vuln, 2.0)
+                    if cond <= 4 or b.get("structurally_deficient"):
+                        b_vuln = max(b_vuln, 1.8)
                     elif cond <= 6:
-                        b_vuln = max(b_vuln, 1.0)
+                        b_vuln = max(b_vuln, 0.7)
+
             # Terrain penalty heuristic
             s = slopes[idx]
             abs_s = abs(s) if s is not None else 0.0
-            t_pen = 1.8 if abs_s > 15 else (1.5 if abs_s > 8 else (1.2 if abs_s > 3 else 1.0))
+            t_pen = 1.7 if abs_s > 18 else (1.4 if abs_s > 10 else (1.15 if abs_s > 6 else 1.0))
+
             # Elevation flood risk heuristic
             e = elevations[idx]
-            elev_risk = 0.3 if (e is not None and e < 5) else (0.2 if (e is not None and e < 20) else 0.05)
-            pre_bsi = elev_risk * (1.0 + b_vuln) * t_pen
+            elev_risk = 0.25 if (e is not None and e < 4) else (0.15 if (e is not None and e < 15) else 0.05)
+
+            # Disaster mode weight weighting
+            if disaster_type == "FLOOD_HURRICANE":
+                pre_bsi = (elev_risk * 2.0) * (1.0 + b_vuln * 1.5) * t_pen
+            elif disaster_type == "EARTHQUAKE":
+                pre_bsi = 0.15 * (1.0 + b_vuln * 2.5) * t_pen
+            elif disaster_type == "LANDSLIDE":
+                pre_bsi = (abs_s / 20.0) * (1.0 + b_vuln) * (t_pen * 2.0)
+            elif disaster_type == "WILDFIRE":
+                pre_bsi = 0.20 * (1.0 + b_vuln) * (t_pen * 1.5)
+            else:
+                pre_bsi = elev_risk * (1.0 + b_vuln) * t_pen
+
             pre_bsi_scores.append((pre_bsi, idx))
 
         pre_bsi_scores.sort(reverse=True)
+        for pre_bsi, idx in pre_bsi_scores:
+            if len(selected) >= max_probes:
+                break
+            if not is_too_close(idx, min_gap=1):
+                selected.add(idx)
+
+        # Fill remaining slots up to max_probes
         for pre_bsi, idx in pre_bsi_scores:
             if len(selected) >= max_probes:
                 break
@@ -320,6 +353,7 @@ class SamplingService:
         cum_dist: List[float],
         target_d: float
     ) -> Tuple[float, float]:
+
         if target_d <= 0.0:
             lon, lat = coords[0]
             return lat, lon

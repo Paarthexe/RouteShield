@@ -83,6 +83,7 @@ class AgentDecision(BaseModel):
     backup_independence: Optional[BackupIndependence] = None
     risk_model: Dict[str, Any] = {}
     evidence_coverage: Dict[str, Any] = {}
+    disaster_type: str = "ALL_HAZARDS"
 
 
 class Route(BaseModel):
@@ -106,5 +107,7 @@ class RouteAnalyzeResponse(BaseModel):
     waypoints: List[Location] = []
     routes: List[Route]
     sample_interval_m: float
+    disaster_type: str = "ALL_HAZARDS"
     cache_hit: bool = False
     agent_decision: Optional[AgentDecision] = None
+
