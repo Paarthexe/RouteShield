@@ -70,6 +70,43 @@ const originIcon = createCustomMarkerIcon('A', '#10b981', '#ffffff');
 const destinationIcon = createCustomMarkerIcon('B', '#f43f5e', '#ffffff');
 const bridgeIcon = createCustomMarkerIcon('≈', '#f59e0b', '#fde68a');
 
+const createMireyeProbeMarkerIcon = (isSelected = false) => {
+  const size = isSelected ? 22 : 16;
+  return L.divIcon({
+    className: 'custom-mireye-icon',
+    html: `
+      <div style="
+        position: relative;
+        width: ${size}px;
+        height: ${size}px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">
+        <div style="
+          position: absolute;
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          background: rgba(16, 185, 129, 0.25);
+          border: 1.5px dashed #10b981;
+        "></div>
+        <div style="
+          width: ${isSelected ? 10 : 7}px;
+          height: ${isSelected ? 10 : 7}px;
+          background: ${isSelected ? '#38bdf8' : '#10b981'};
+          border: 1.5px solid #ffffff;
+          transform: rotate(45deg);
+          box-shadow: 0 0 8px rgba(16, 185, 129, 0.85);
+        "></div>
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+};
+
+
 // Map view bounds adjuster component
 function MapBoundsAdjuster({ bounds }) {
   const map = useMap();
@@ -345,85 +382,77 @@ export default function MapView({
             else if (hazardScore > 0.3) fillColor = '#f59e0b'; // Amber
             else if (hazardScore > 0.1) fillColor = '#22d3ee'; // Light cyan
 
-            // Mireye points are prominently sized with emerald targeting
-            const radius = isSampleSelected ? 8 : isMireyeProbed ? 6.5 : 2.5;
+            const popupContent = (
+              <Popup>
+                <div className="p-1 space-y-1.5 font-sans text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold text-cyan-400 font-mono block">
+                      {sample.sample_id}
+                    </span>
+                    {isMireyeProbed && (
+                      <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-600 font-mono font-bold">
+                        MIREYE PROBE
+                      </span>
+                    )}
+                  </div>
+                  <div className="font-bold text-slate-100 font-mono text-[11px]">
+                    Distance: <span className="text-cyan-300">{distKm} km</span>
+                  </div>
+                  {hazardScore > 0 && (
+                    <div className="text-[10px] text-slate-300 font-mono">
+                      Hazard Score: <span className={hazardScore > 0.3 ? 'text-amber-400 font-bold' : 'text-slate-300'}>{hazardScore.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {sample.slope_pct != null && (
+                    <div className="text-[10px] text-slate-400 font-mono">
+                      Slope: <span className={Math.abs(sample.slope_pct) > 8 ? 'text-rose-400 font-bold' : 'text-slate-300'}>{sample.slope_pct.toFixed(1)}%</span>
+                    </div>
+                  )}
+                  {sample.nbi_bridges && sample.nbi_bridges.length > 0 && (
+                    <div className="text-[10px] text-amber-300 font-mono">
+                      Bridges nearby: {sample.nbi_bridges.length}
+                    </div>
+                  )}
+                </div>
+              </Popup>
+            );
 
-            return (
-              <React.Fragment key={sample.sample_id}>
-                {/* Secondary outer radar halo for Mireye Probed points */}
-                {isMireyeProbed && !isSampleSelected && (
-                  <CircleMarker
-                    center={[sample.latitude, sample.longitude]}
-                    radius={11}
-                    pathOptions={{
-                      color: '#10b981',
-                      fillColor: '#10b981',
-                      fillOpacity: 0.15,
-                      weight: 1.5,
-                      dashArray: '2, 3'
-                    }}
-                    interactive={false}
-                  />
-                )}
-
-                <CircleMarker
-                  center={[sample.latitude, sample.longitude]}
-                  radius={radius}
+            if (isMireyeProbed) {
+              return (
+                <Marker
+                  key={sample.sample_id}
+                  position={[sample.latitude, sample.longitude]}
+                  icon={createMireyeProbeMarkerIcon(isSampleSelected)}
                   eventHandlers={{
                     click: () => onSelectSample(sample)
                   }}
-                  pathOptions={{
-                    fillColor: isSampleSelected
-                      ? '#38bdf8'
-                      : isMireyeProbed
-                      ? '#10b981'
-                      : fillColor,
-                    fillOpacity: isSampleSelected ? 1.0 : isMireyeProbed ? 0.95 : 0.5,
-                    color: isSampleSelected
-                      ? '#ffffff'
-                      : isMireyeProbed
-                      ? '#ecfdf5'
-                      : '#0f172a',
-                    weight: isSampleSelected ? 2.5 : isMireyeProbed ? 2 : 1
-                  }}
                 >
-                  <Popup>
-                    <div className="p-1 space-y-1.5 font-sans text-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-bold text-cyan-400 font-mono block">
-                          {sample.sample_id}
-                        </span>
-                        {isMireyeProbed && (
-                          <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-600 font-mono font-bold">
-                            MIREYE PROBE
-                          </span>
-                        )}
-                      </div>
-                      <div className="font-bold text-slate-100 font-mono text-[11px]">
-                        Distance: <span className="text-cyan-300">{distKm} km</span>
-                      </div>
-                      {hazardScore > 0 && (
-                        <div className="text-[10px] text-slate-300 font-mono">
-                          Hazard Score: <span className={hazardScore > 0.3 ? 'text-amber-400 font-bold' : 'text-slate-300'}>{hazardScore.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {sample.slope_pct != null && (
-                        <div className="text-[10px] text-slate-400 font-mono">
-                          Slope: <span className={Math.abs(sample.slope_pct) > 8 ? 'text-rose-400 font-bold' : 'text-slate-300'}>{sample.slope_pct.toFixed(1)}%</span>
-                        </div>
-                      )}
-                      {sample.nbi_bridges && sample.nbi_bridges.length > 0 && (
-                        <div className="text-[10px] text-amber-300 font-mono">
-                          Bridges nearby: {sample.nbi_bridges.length}
-                        </div>
-                      )}
-                    </div>
-                  </Popup>
-                </CircleMarker>
-              </React.Fragment>
+                  {popupContent}
+                </Marker>
+              );
+            }
+
+            return (
+              <CircleMarker
+                key={sample.sample_id}
+                center={[sample.latitude, sample.longitude]}
+                radius={isSampleSelected ? 7 : 2.5}
+                eventHandlers={{
+                  click: () => onSelectSample(sample)
+                }}
+                pathOptions={{
+                  fillColor: isSampleSelected ? '#38bdf8' : fillColor,
+                  fillOpacity: isSampleSelected ? 1.0 : 0.45,
+                  color: isSampleSelected ? '#ffffff' : '#0f172a',
+                  weight: isSampleSelected ? 2 : 1
+                }}
+              >
+                {popupContent}
+              </CircleMarker>
             );
           })
         )}
+
 
 
         {/* Peak Bottleneck Markers (Top Critical Chokepoints Only - Spaced >= 5km) */}

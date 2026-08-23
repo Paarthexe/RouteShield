@@ -104,8 +104,8 @@ export default function ElevationProfile({ route }) {
           )}
           {probed.length > 0 && (
             <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full border border-emerald-400 bg-emerald-950"></span>
-              <span>Mireye Point</span>
+              <span className="h-2 w-2 rotate-45 bg-emerald-400 border border-emerald-950"></span>
+              <span className="text-emerald-300 font-bold">Mireye Probe</span>
             </span>
           )}
         </div>
@@ -137,25 +137,25 @@ export default function ElevationProfile({ route }) {
           </g>
         ))}
 
+        {/* Area fill */}
+        <path d={areaPath} fill="url(#elevGrad)" />
+
+        {/* Elevation line */}
+        <path d={linePath} fill="none" stroke="#38bdf8" strokeWidth="1.75" strokeLinejoin="round" />
+
         {/* Steep grade zones */}
         {steepZones.map((sz, i) => (
           <circle
             key={`steep-${i}`}
             cx={xScale(sz.dist)}
             cy={yScale(sz.elev)}
-            r={5}
+            r={4.5}
             fill="#f43f5e"
             fillOpacity={0.25}
             stroke="#f43f5e"
             strokeWidth={1}
           />
         ))}
-
-        {/* Area fill */}
-        <path d={areaPath} fill="url(#elevGrad)" />
-
-        {/* Elevation line */}
-        <path d={linePath} fill="none" stroke="#38bdf8" strokeWidth="1.75" strokeLinejoin="round" />
 
         {/* Bridge markers */}
         {bridges.map((b, i) => (
@@ -173,17 +173,30 @@ export default function ElevationProfile({ route }) {
           </g>
         ))}
 
-        {/* Mireye probed markers */}
-        {probed.map((p, i) => (
-          <g key={`probed-${i}`}>
-            <circle
-              cx={xScale(p.dist)} cy={yScale(p.elev)}
-              r={3.5} fill="#10b981"
-              stroke="#042f2e" strokeWidth={1}
-            />
-          </g>
-        ))}
+        {/* Mireye probed markers: distinctive emerald diamond beacons with guide lines */}
+        {probed.map((p, i) => {
+          const cx = xScale(p.dist);
+          const cy = yScale(p.elev);
+          return (
+            <g key={`probed-${i}`}>
+              <line
+                x1={cx} y1={cy}
+                x2={cx} y2={PADDING.top + innerH}
+                stroke="#10b981" strokeWidth="1" strokeDasharray="2,2" strokeOpacity="0.35"
+              />
+              <rect
+                x={cx - 3.5} y={cy - 3.5}
+                width="7" height="7"
+                transform={`rotate(45 ${cx} ${cy})`}
+                fill="#10b981"
+                stroke="#ffffff"
+                strokeWidth="1"
+              />
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
 }
+

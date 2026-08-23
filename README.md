@@ -129,7 +129,8 @@ A corridor is automatically marked **`REJECTED`** if:
 |---|---|
 | **Corridor Routing** | OSRM + Lateral Waypoint Bypass Synthesizer |
 | **Bridge Inventory** | FHWA National Bridge Inventory (740k+ US structures in SQLite) |
-| **Elevation & Slopes** | Open-Meteo DEM & USGS 3DEP |
+| **Elevation, Slopes & Meteorology** | Open-Meteo Weather & DEM + USGS 3DEP |
+
 | **Seismic Acceleration** | USGS National Seismic Hazard Model (NSHM 2023) via Mireye |
 | **Floodplains & Zones** | FEMA National Flood Hazard Layer (NFHL) via Mireye |
 | **Wildfire Risk** | CAL FIRE FHSZ + FEMA National Risk Index via Mireye |

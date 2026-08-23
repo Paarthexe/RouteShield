@@ -121,17 +121,22 @@ export default function SampleInspector({ sample, onClose }) {
 
       {/* Mireye Physical-World Data Section */}
       {mireye && (
-        <div className="bg-slate-950 border border-cyan-900/50 p-3 rounded-lg text-xs space-y-2">
+        <div className={`p-3 rounded-lg text-xs space-y-2 border ${
+          isMireyeProbed
+            ? 'bg-emerald-950/20 border-emerald-500/60 shadow-lg shadow-emerald-950/30'
+            : 'bg-slate-950 border-cyan-900/50'
+        }`}>
           <div className="flex items-center justify-between">
-            <h5 className="text-[11px] font-bold text-cyan-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
-              <Mountain className="h-3.5 w-3.5 text-cyan-400" /> Physical Environmental Facts
+            <h5 className="text-[11px] font-bold text-emerald-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
+              <Mountain className="h-3.5 w-3.5 text-emerald-400" />
+              <span>{isMireyeProbed ? 'Mireye Provenance Ground-Truth Probe' : 'Physical Environmental Facts'}</span>
             </h5>
-            <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono border ${
+            <span className={`text-[9px] px-2 py-0.5 rounded font-mono border font-bold ${
               isMireyeProbed
-                ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                ? 'bg-emerald-900 text-emerald-100 border-emerald-400'
                 : 'bg-cyan-950 text-cyan-300 border-cyan-800'
             }`}>
-              {isMireyeProbed ? 'Mireye + Open-Meteo' : 'Open-Meteo DEM'}
+              {isMireyeProbed ? 'VERIFIED PROBE' : 'Open-Meteo DEM'}
             </span>
           </div>
 
@@ -139,7 +144,7 @@ export default function SampleInspector({ sample, onClose }) {
             {mireye.elevation_m !== undefined && (
               <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
                 <span className="text-[9px] text-slate-400 block uppercase">Elevation</span>
-                <span className="text-xs font-bold text-slate-100">{mireye.elevation_m.toFixed(2)} m</span>
+                <span className="text-xs font-bold text-slate-100">{mireye.elevation_m.toFixed(1)} m</span>
                 <span className="text-[9px] text-slate-500 block truncate" title={mireye.elevation_source}>
                   {mireye.elevation_source || 'USGS 3DEP'}
                 </span>
@@ -153,13 +158,60 @@ export default function SampleInspector({ sample, onClose }) {
                   {mireye.seismic_pga_g.toFixed(2)} g
                 </span>
                 <span className="text-[9px] text-slate-500 block truncate" title={mireye.seismic_source}>
-                  {mireye.seismic_source || 'USGS NSHM'}
+                  {mireye.seismic_source || 'USGS NSHM 2023'}
+                </span>
+              </div>
+            )}
+
+            {mireye.fire_hazard_zone && (
+              <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                <span className="text-[9px] text-slate-400 block uppercase">CAL FIRE FHSZ</span>
+                <span className={`text-xs font-bold ${mireye.fire_hazard_zone === 'Very High' ? 'text-rose-400' : 'text-amber-300'}`}>
+                  {mireye.fire_hazard_zone}
+                </span>
+                <span className="text-[9px] text-slate-500 block">
+                  {mireye.most_recent_burn_year ? `Burned ${mireye.most_recent_burn_year}` : 'CAL FIRE SRA/LRA'}
+                </span>
+              </div>
+            )}
+
+            {(mireye.fema_flood_zone || mireye.within_floodplain) && (
+              <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                <span className="text-[9px] text-slate-400 block uppercase">FEMA Flood Zone</span>
+                <span className={`text-xs font-bold ${mireye.coastal_high_hazard ? 'text-rose-400' : 'text-cyan-300'}`}>
+                  {mireye.fema_flood_zone ? `Zone ${mireye.fema_flood_zone}` : '100-Yr Floodplain'}
+                </span>
+                <span className="text-[9px] text-slate-500 block truncate">
+                  {mireye.coastal_high_hazard ? 'Coastal Wave Hazard' : 'FEMA NFHL'}
+                </span>
+              </div>
+            )}
+
+            {mireye.landslide_susceptibility !== undefined && (
+              <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                <span className="text-[9px] text-slate-400 block uppercase">Landslide Susceptibility</span>
+                <span className={`text-xs font-bold ${mireye.landslide_susceptibility >= 60 ? 'text-rose-400' : mireye.landslide_susceptibility >= 30 ? 'text-amber-300' : 'text-slate-200'}`}>
+                  {mireye.landslide_susceptibility} / 100
+                </span>
+                <span className="text-[9px] text-slate-500 block">USGS Landslide Index</span>
+              </div>
+            )}
+
+            {mireye.nearest_dam_hazard && (
+              <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                <span className="text-[9px] text-slate-400 block uppercase">USACE Dam Hazard</span>
+                <span className={`text-xs font-bold ${mireye.nearest_dam_hazard === 'High' ? 'text-rose-400' : 'text-amber-300'}`}>
+                  {mireye.nearest_dam_hazard}
+                </span>
+                <span className="text-[9px] text-slate-500 block">
+                  {mireye.nearest_dam_distance_m ? `${(mireye.nearest_dam_distance_m / 1000).toFixed(1)} km away` : 'National Dam Inventory'}
                 </span>
               </div>
             )}
           </div>
         </div>
       )}
+
 
       {/* FHWA National Bridge Inventory Section */}
       {bridges.length > 0 ? (

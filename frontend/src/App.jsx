@@ -22,8 +22,9 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [analysisData, setAnalysisData] = useState(null);
   const [selectedRouteId, setSelectedRouteId] = useState('route_1');
-  const [showSamples, setShowSamples] = useState(true);
+  const [showSamples, setShowSamples] = useState(false);
   const [selectedSample, setSelectedSample] = useState(null);
+
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [pickerMode, setPickerMode] = useState(null);
