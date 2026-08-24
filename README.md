@@ -122,9 +122,7 @@ docker compose up --build
 
 ## Data and service setup
 
-OSRM provides route geometry. Open-Meteo provides elevation data. Mireye provides geocoding and physical-world hazard data when `MIREYE_API_KEY` is set.
-
-For real bridge enrichment, place the FHWA NBI file named `2025AllStatesNoDelimiterAllRecords.txt` in the repository root. The backend builds a local SQLite index on startup. When that file is unavailable, the app uses deterministic fallback bridge records so local development and tests can still exercise the full flow. Those fallback records are suitable for demos only.
+OSRM provides route geometry. Open-Meteo provides elevation data. Mireye provides geocoding and physical-world hazard data.
 
 ## Tests
 
