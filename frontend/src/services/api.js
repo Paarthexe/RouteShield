@@ -1,4 +1,4 @@
-export async function analyzeRoutes(origin, destination, sampleIntervalM = 500, waypoints = []) {
+export async function analyzeRoutes(origin, destination, sampleIntervalM = 500, waypoints = [], disasterType = 'ALL_HAZARDS') {
   const response = await fetch('/api/routes/analyze', {
     method: 'POST',
     headers: {
@@ -9,8 +9,10 @@ export async function analyzeRoutes(origin, destination, sampleIntervalM = 500, 
       destination,
       waypoints: waypoints.filter(w => typeof w === 'string' ? w.trim() !== '' : Boolean(w)),
       sample_interval_m: sampleIntervalM,
+      disaster_type: disasterType,
     }),
   });
+
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

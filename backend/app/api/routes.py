@@ -15,7 +15,8 @@ async def generate_routes(payload: RouteGenerateRequest):
         origin=payload.origin,
         destination=payload.destination,
         waypoints=payload.waypoints,
-        sample_interval_m=payload.sample_interval_m
+        sample_interval_m=payload.sample_interval_m,
+        disaster_type=payload.disaster_type or "ALL_HAZARDS"
     )
     return RouteGenerateResponse(routes=routes)
 
@@ -65,15 +66,17 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
         waypoint_coords.append(w_coord)
 
     interval = payload.sample_interval_m or settings.ROUTE_SAMPLE_INTERVAL_M
+    disaster_mode = payload.disaster_type or "ALL_HAZARDS"
 
-    # Run the full agent pipeline: route gen → sampling → bottleneck → viability → decision
+    # Run the full agent pipeline: route gen -> sampling -> bottleneck -> viability -> decision
     routes, agent_decision = await routing_service.generate_and_analyze(
         origin=origin_coord,
         destination=dest_coord,
         origin_loc=origin_loc,
         destination_loc=dest_loc,
         waypoints=waypoint_coords,
-        sample_interval_m=interval
+        sample_interval_m=interval,
+        disaster_type=disaster_mode
     )
 
     return RouteAnalyzeResponse(
@@ -82,5 +85,6 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
         waypoints=waypoint_locs,
         routes=routes,
         sample_interval_m=interval,
+        disaster_type=disaster_mode,
         agent_decision=agent_decision
     )

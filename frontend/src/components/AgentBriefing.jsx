@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Compass, ChevronDown, ChevronUp, Shield, AlertTriangle, CheckCircle2, FileText, ArrowRight } from 'lucide-react';
+import { ChevronDown, ChevronUp, Shield, AlertTriangle, FileText, Route as RouteIcon, Database } from 'lucide-react';
 
 export default function AgentBriefing({ agentDecision }) {
   const [expandedTrace, setExpandedTrace] = useState(false);
@@ -13,8 +13,12 @@ export default function AgentBriefing({ agentDecision }) {
     executive_summary,
     trade_off_explanation,
     steps = [],
-    mireye_insight
+    mireye_insight,
+    backup_independence,
+    risk_model,
+    evidence_coverage = {}
   } = agentDecision;
+  const noViableRoute = !primary_route_id && rejected_route_ids.length > 0;
 
   return (
     <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-4 shadow-xl space-y-3.5">
@@ -31,14 +35,49 @@ export default function AgentBriefing({ agentDecision }) {
           </div>
         </div>
 
-        {/* Primary recommendation badge */}
+        {/* Primary recommendation / no-viable badge */}
         {primary_route_id && (
           <div className="flex items-center gap-1.5 bg-emerald-950/70 border border-emerald-800/80 px-2.5 py-0.5 rounded text-[11px] font-mono text-emerald-300">
             <span className="text-zinc-400">RECOMMENDED:</span>
             <span className="font-bold">{primary_route_id.toUpperCase().replace('_', ' ')}</span>
           </div>
         )}
+        {noViableRoute && (
+          <div className="flex items-center gap-1.5 bg-rose-950/70 border border-rose-800/80 px-2.5 py-0.5 rounded text-[11px] font-mono text-rose-300">
+            <AlertTriangle className="h-3 w-3" />
+            <span className="font-bold">NO VIABLE ROUTE</span>
+          </div>
+        )}
       </div>
+
+      {backup_independence && (
+        <div className={`rounded-lg border p-3 text-xs ${
+          backup_independence.is_independent ? 'bg-emerald-950/25 border-emerald-900/60' : 'bg-amber-950/25 border-amber-900/60'
+        }`}>
+          <div className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider">
+            <RouteIcon className={`h-3.5 w-3.5 ${backup_independence.is_independent ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <span className={backup_independence.is_independent ? 'text-emerald-300' : 'text-amber-300'}>
+              {backup_independence.is_independent ? 'Independent backup verified' : 'No independent backup verified'}
+            </span>
+          </div>
+          <p className="mt-1.5 leading-relaxed text-zinc-300">{backup_independence.explanation}</p>
+          <p className="mt-1 text-[10px] font-mono text-zinc-500">Independence score: {backup_independence.independence_score}/100 · Shared corridor: {backup_independence.corridor_overlap_pct}%</p>
+        </div>
+      )}
+
+      {(risk_model || evidence_coverage.collection_policy) && (
+        <details className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-xs">
+          <summary className="cursor-pointer list-none flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
+            <Database className="h-3.5 w-3.5 text-sky-400" /> Methodology & evidence coverage
+          </summary>
+          <div className="mt-2 space-y-1.5 text-[11px] leading-relaxed text-zinc-400">
+            {risk_model?.interpretation && <p>{risk_model.interpretation}</p>}
+            {risk_model?.viability_gate && <p>Gate: reject at BSI above {risk_model.viability_gate.catastrophic_bottleneck_bsi} or high-hazard exposure above {risk_model.viability_gate.high_hazard_exposure_pct}%.</p>}
+            {evidence_coverage.collection_policy && <p>{evidence_coverage.collection_policy}</p>}
+            <p>{evidence_coverage.mireye_probe_count || 0} Mireye sample(s), {evidence_coverage.bridge_evidence_sample_count || 0} bridge-evidence sample(s).</p>
+          </div>
+        </details>
+      )}
 
       {/* Executive Summary */}
       <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-lg p-3 space-y-1">
@@ -84,15 +123,16 @@ export default function AgentBriefing({ agentDecision }) {
         <div className="bg-zinc-950 border border-emerald-900/40 rounded-lg p-2">
           <span className="text-[10px] text-emerald-400 font-bold block mb-0.5">PRIMARY</span>
           <span className="text-zinc-200 font-semibold">
-            {primary_route_id ? primary_route_id.toUpperCase().replace('_', ' ') : '—'}
+            {primary_route_id ? primary_route_id.toUpperCase().replace('_', ' ') : '-'}
           </span>
         </div>
         <div className="bg-zinc-950 border border-blue-900/40 rounded-lg p-2">
           <span className="text-[10px] text-blue-400 font-bold block mb-0.5">BACKUP</span>
           <span className="text-zinc-200 font-semibold">
-            {backup_route_id ? backup_route_id.toUpperCase().replace('_', ' ') : '—'}
+            {backup_route_id ? backup_route_id.toUpperCase().replace('_', ' ') : '-'}
           </span>
         </div>
+
         <div className="bg-zinc-950 border border-rose-900/40 rounded-lg p-2">
           <span className="text-[10px] text-rose-400 font-bold block mb-0.5">HIGH RISK</span>
           <span className="text-zinc-200 font-semibold truncate block" title={rejected_route_ids.join(', ')}>

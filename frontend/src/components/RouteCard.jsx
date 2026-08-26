@@ -1,11 +1,12 @@
 import React from 'react';
-import { Clock, Navigation, MapPin, CheckCircle2, AlertTriangle, ShieldCheck, ShieldX, ShieldAlert, Layers, Fuel, Zap } from 'lucide-react';
+import { Clock, Navigation, MapPin, CheckCircle2, AlertTriangle, ShieldCheck, ShieldX, ShieldAlert, Layers } from 'lucide-react';
 
 const ROUTE_COLORS = {
   route_1: { border: 'border-cyan-500', text: 'text-cyan-400', bg: 'bg-cyan-500/10', badge: 'bg-cyan-500/20 text-cyan-300' },
   route_2: { border: 'border-purple-500', text: 'text-purple-400', bg: 'bg-purple-500/10', badge: 'bg-purple-500/20 text-purple-300' },
   route_3: { border: 'border-amber-500', text: 'text-amber-400', bg: 'bg-amber-500/10', badge: 'bg-amber-500/20 text-amber-300' },
   route_4: { border: 'border-emerald-500', text: 'text-emerald-400', bg: 'bg-emerald-500/10', badge: 'bg-emerald-500/20 text-emerald-300' },
+  route_5: { border: 'border-rose-500', text: 'text-rose-400', bg: 'bg-rose-500/10', badge: 'bg-rose-500/20 text-rose-300' },
 };
 
 const STATUS_CONFIG = {
@@ -46,13 +47,13 @@ function ViabilityGauge({ score }) {
 
 export default function RouteCard({ route, isSelected, onSelect, fastestDuration }) {
   const colorScheme = ROUTE_COLORS[route.route_id] || ROUTE_COLORS.route_1;
-  const isFastest = fastestDuration && Math.abs(route.travel_time_min - fastestDuration) < 0.1;
+  const isFastest = route.travel_time_min === fastestDuration;
   const viability = route.viability;
   const statusKey = viability?.status || 'CANDIDATE';
   const statusCfg = STATUS_CONFIG[statusKey] || STATUS_CONFIG.CANDIDATE;
 
-  const timeDiffMin = !isFastest && fastestDuration 
-    ? Math.round(route.travel_time_min - fastestDuration)
+  const timeDiffMin = !isFastest && fastestDuration !== undefined
+    ? Math.round((route.travel_time_min - fastestDuration) * 10) / 10
     : 0;
 
   return (
@@ -168,8 +169,8 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
         </div>
       )}
 
-      {/* Rejection Reasons - Only displayed if corridor is actively REJECTED */}
-      {statusKey === 'REJECTED' && viability && viability.rejection_reasons && viability.rejection_reasons.length > 0 && (
+      {/* Rejection Reasons */}
+      {viability && viability.rejection_reasons && viability.rejection_reasons.length > 0 && (
         <div className="mb-2 p-2 bg-rose-950/60 border border-rose-800/60 rounded-lg">
           <div className="flex items-center gap-1.5 text-[10px] font-bold text-rose-400 uppercase mb-1">
             <ShieldX className="h-3 w-3" />
@@ -200,42 +201,14 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
         </div>
       )}
 
-      {/* Refueling & EV Infrastructure Summary */}
-      {route.infrastructure_summary && (route.infrastructure_summary.total_gas_stations > 0 || route.infrastructure_summary.total_ev_chargers > 0) && (
-        <div className="mb-2 py-1.5 px-2.5 bg-slate-950/80 border border-slate-800 rounded-lg text-xs space-y-1">
-          <div className="flex items-center justify-between text-[10px] font-mono flex-wrap gap-y-1">
-            <div className="flex items-center gap-2.5 text-slate-300">
-              <span className="flex items-center gap-1 text-amber-300 font-semibold">
-                <Fuel className="h-3 w-3 text-amber-400" /> Gas: {route.infrastructure_summary.total_gas_stations}
-              </span>
-              <span className="flex items-center gap-1 text-emerald-300 font-semibold" title="DC Fast Chargers (20-30 min)">
-                <Zap className="h-3 w-3 text-emerald-400" /> Fast EV: {route.infrastructure_summary.total_ev_fast_stations ?? route.infrastructure_summary.total_ev_chargers}
-              </span>
-              {route.infrastructure_summary.total_ev_standard_stations > 0 && (
-                <span className="text-sky-300/80 font-normal" title="Standard AC Chargers (6-8 hrs)">
-                  Std: {route.infrastructure_summary.total_ev_standard_stations}
-                </span>
-              )}
-            </div>
-            <span className="text-slate-400 font-mono">
-              Max Gap: {route.infrastructure_summary.max_gas_gap_km} km
-            </span>
-          </div>
-          {route.infrastructure_summary.fuel_desert_warning && (
-            <div className="text-[9px] font-mono text-amber-300/90 bg-amber-950/40 border border-amber-800/40 px-1.5 py-0.5 rounded">
-              Warning: {route.infrastructure_summary.fuel_desert_warning}
-            </div>
-          )}
-        </div>
-      )}
-
       <div className="flex items-center justify-between pt-1">
         <span className="text-xs text-slate-400">
           {statusKey === 'PRIMARY' ? 'Recommended Evacuation Corridor' :
            statusKey === 'BACKUP' ? 'Secondary Backup Corridor' :
-           statusKey === 'REJECTED' ? 'Fragile Corridor — Not Recommended' :
+           statusKey === 'REJECTED' ? 'Fragile Corridor - Not Recommended' :
            'Candidate Evacuation Corridor'}
         </span>
+
         <button
           onClick={(e) => {
             e.stopPropagation();

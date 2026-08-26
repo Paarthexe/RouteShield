@@ -14,21 +14,25 @@ export default function Header() {
               ROUTESHIELD
             </h1>
             <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase bg-zinc-900 text-zinc-300 border border-zinc-700/60 rounded">
-              Corridor Risk Engine
+              Evidence &rarr; Resilience &rarr; Decision
             </span>
           </div>
+          <p className="text-xs text-zinc-400 font-medium">
+            Evacuation resilience analysis workspace
+          </p>
         </div>
       </div>
 
       <div className="flex items-center space-x-3 text-xs text-zinc-400">
         <div className="hidden sm:flex items-center space-x-1.5 bg-zinc-900/80 px-2.5 py-1 rounded border border-zinc-800 text-[11px] font-mono">
           <Database className="h-3 w-3 text-zinc-400" />
-          <span className="text-zinc-300">FHWA NBI (740k)</span>
-          <span className="text-zinc-600">•</span>
+          <span className="text-zinc-300">FHWA NBI</span>
+          <span className="text-zinc-600">|</span>
           <span className="text-zinc-300">Mireye</span>
-          <span className="text-zinc-600">•</span>
-          <span className="text-zinc-300">Open-Meteo</span>
+          <span className="text-zinc-600">|</span>
+          <span className="text-zinc-300">Open-Meteo Weather & DEM</span>
         </div>
+
 
         <div className="flex items-center space-x-1.5 bg-emerald-950/60 border border-emerald-800/50 px-2 py-1 rounded text-[11px] font-mono text-emerald-400">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>

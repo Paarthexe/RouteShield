@@ -10,6 +10,10 @@ export default function SampleInspector({ sample, onClose }) {
   const isMireyeProbed = sample.is_mireye_probed;
   const slopePct = sample.slope_pct;
   const hazardScore = sample.hazard_score;
+  const sources = Object.entries(mireye?.raw_fields || {})
+    .filter(([, field]) => field?.source)
+    .map(([name, field]) => ({ name, source: field.source, url: field.source_url }))
+    .slice(0, 8);
 
   return (
     <div className="bg-slate-900 border border-slate-700/80 rounded-xl p-4 shadow-2xl space-y-3 relative animate-fadeIn max-h-[520px] overflow-y-auto">
@@ -29,13 +33,22 @@ export default function SampleInspector({ sample, onClose }) {
           <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
             Sample Point Inspector
           </h4>
-          <div className="flex items-center gap-2">
-            <p className="text-[11px] text-cyan-400 font-mono">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-[11px] text-cyan-400 font-mono font-bold">
               {sample.sample_id}
             </p>
             {isMireyeProbed && (
-              <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700 font-mono">
-                Mireye Sample
+              <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700 font-mono font-bold">
+                Mireye Probe
+              </span>
+            )}
+            {hazardScore != null && (
+              <span className={`text-[9px] px-1.5 py-0.5 rounded border font-mono font-bold ${
+                hazardScore > 0.5 ? 'bg-rose-950 text-rose-300 border-rose-700' :
+                hazardScore > 0.3 ? 'bg-amber-950 text-amber-300 border-amber-700' :
+                'bg-emerald-950 text-emerald-300 border-emerald-700'
+              }`}>
+                Hazard Score: {(hazardScore * 100).toFixed(0)}%
               </span>
             )}
           </div>
@@ -68,78 +81,6 @@ export default function SampleInspector({ sample, onClose }) {
           </span>
         </div>
       </div>
-
-      {/* Real-time NWS / DOT Emergency Hazards Section */}
-      {sample.realtime_hazards && sample.realtime_hazards.length > 0 && (
-        <div className="bg-rose-950/40 border border-rose-800/80 p-3 rounded-lg text-xs space-y-2">
-          <div className="flex items-center justify-between">
-            <h5 className="text-[11px] font-bold text-rose-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
-              <AlertTriangle className="h-3.5 w-3.5 text-rose-400 animate-pulse" /> Active Emergency Hazards ({sample.realtime_hazards.length})
-            </h5>
-            <span className="text-[9px] bg-rose-900 text-rose-200 border border-rose-700 px-1.5 py-0.5 rounded font-mono">
-              Live NWS Feed
-            </span>
-          </div>
-
-          <div className="space-y-1.5 font-mono">
-            {sample.realtime_hazards.map((hz, i) => (
-              <div key={i} className="bg-slate-950/90 p-2.5 rounded border border-rose-900/60 text-[11px]">
-                <div className="flex items-center justify-between text-rose-300 font-bold mb-1">
-                  <span>{hz.event}</span>
-                  <span className="text-[9px] px-1.5 py-0.2 bg-rose-950 border border-rose-800 rounded uppercase">
-                    {hz.severity}
-                  </span>
-                </div>
-                <p className="text-slate-300 text-[11px] font-sans font-medium mb-1">
-                  {hz.headline || hz.description}
-                </p>
-                {hz.instruction && (
-                  <p className="text-[10px] text-amber-300 font-sans italic bg-amber-950/30 p-1.5 rounded border border-amber-800/40 mt-1">
-                    "{hz.instruction}"
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* TomTom Live Traffic Flow Section */}
-      {sample.traffic_flow && (
-        <div className="bg-slate-950 border border-amber-900/50 p-3 rounded-lg text-xs space-y-2">
-          <div className="flex items-center justify-between">
-            <h5 className="text-[11px] font-bold text-amber-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
-              <Zap className="h-3.5 w-3.5 text-amber-400 animate-pulse" /> Live Vehicle Traffic Flow
-            </h5>
-            <span className="text-[9px] bg-amber-950 text-amber-300 border border-amber-800 px-1.5 py-0.5 rounded font-mono">
-              TomTom Flow API
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
-            <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
-              <span className="text-[9px] text-slate-400 block uppercase">Current Speed</span>
-              <span className="text-xs font-bold text-slate-100">{sample.traffic_flow.current_speed_kmh} km/h</span>
-              <span className="text-[9px] text-slate-500 block truncate">
-                Free Flow: {sample.traffic_flow.free_flow_speed_kmh} km/h
-              </span>
-            </div>
-
-            <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
-              <span className="text-[9px] text-slate-400 block uppercase">Congestion</span>
-              <span className={`text-xs font-bold ${
-                sample.traffic_flow.congestion_condition.includes('Heavy') || sample.traffic_flow.congestion_condition.includes('Closed') ? 'text-rose-400' :
-                sample.traffic_flow.congestion_condition.includes('Moderate') ? 'text-amber-300' : 'text-emerald-400'
-              }`}>
-                {sample.traffic_flow.congestion_condition}
-              </span>
-              <span className="text-[9px] text-slate-500 block">
-                Speed Ratio: {(sample.traffic_flow.speed_ratio * 100).toFixed(0)}%
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Slope & Hazard Score Row */}
       {(slopePct != null || hazardScore != null) && (
@@ -193,17 +134,22 @@ export default function SampleInspector({ sample, onClose }) {
 
       {/* Mireye Physical-World Data Section */}
       {mireye && (
-        <div className="bg-slate-950 border border-cyan-900/50 p-3 rounded-lg text-xs space-y-2">
+        <div className={`p-3 rounded-lg text-xs space-y-2 border ${
+          isMireyeProbed
+            ? 'bg-emerald-950/20 border-emerald-500/60 shadow-lg shadow-emerald-950/30'
+            : 'bg-slate-950 border-cyan-900/50'
+        }`}>
           <div className="flex items-center justify-between">
-            <h5 className="text-[11px] font-bold text-cyan-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
-              <Mountain className="h-3.5 w-3.5 text-cyan-400" /> Physical Environmental Facts
+            <h5 className="text-[11px] font-bold text-emerald-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
+              <Mountain className="h-3.5 w-3.5 text-emerald-400" />
+              <span>{isMireyeProbed ? 'Mireye Provenance Ground-Truth Probe' : 'Physical Environmental Facts'}</span>
             </h5>
-            <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono border ${
+            <span className={`text-[9px] px-2 py-0.5 rounded font-mono border font-bold ${
               isMireyeProbed
-                ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                ? 'bg-emerald-900 text-emerald-100 border-emerald-400'
                 : 'bg-cyan-950 text-cyan-300 border-cyan-800'
             }`}>
-              {isMireyeProbed ? 'Mireye + Open-Meteo' : 'Open-Meteo DEM'}
+              {isMireyeProbed ? 'VERIFIED PROBE' : 'Open-Meteo DEM'}
             </span>
           </div>
 
@@ -211,7 +157,7 @@ export default function SampleInspector({ sample, onClose }) {
             {mireye.elevation_m !== undefined && (
               <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
                 <span className="text-[9px] text-slate-400 block uppercase">Elevation</span>
-                <span className="text-xs font-bold text-slate-100">{mireye.elevation_m.toFixed(2)} m</span>
+                <span className="text-xs font-bold text-slate-100">{mireye.elevation_m.toFixed(1)} m</span>
                 <span className="text-[9px] text-slate-500 block truncate" title={mireye.elevation_source}>
                   {mireye.elevation_source || 'USGS 3DEP'}
                 </span>
@@ -225,10 +171,72 @@ export default function SampleInspector({ sample, onClose }) {
                   {mireye.seismic_pga_g.toFixed(2)} g
                 </span>
                 <span className="text-[9px] text-slate-500 block truncate" title={mireye.seismic_source}>
-                  {mireye.seismic_source || 'USGS NSHM'}
+                  {mireye.seismic_source || 'USGS NSHM 2023'}
                 </span>
               </div>
             )}
+
+            {mireye.fire_hazard_zone && (
+              <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                <span className="text-[9px] text-slate-400 block uppercase">CAL FIRE FHSZ</span>
+                <span className={`text-xs font-bold ${mireye.fire_hazard_zone === 'Very High' ? 'text-rose-400' : 'text-amber-300'}`}>
+                  {mireye.fire_hazard_zone}
+                </span>
+                <span className="text-[9px] text-slate-500 block">
+                  {mireye.most_recent_burn_year ? `Burned ${mireye.most_recent_burn_year}` : 'CAL FIRE SRA/LRA'}
+                </span>
+              </div>
+            )}
+
+            {(mireye.fema_flood_zone || mireye.within_floodplain) && (
+              <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                <span className="text-[9px] text-slate-400 block uppercase">FEMA Flood Zone</span>
+                <span className={`text-xs font-bold ${mireye.coastal_high_hazard ? 'text-rose-400' : 'text-cyan-300'}`}>
+                  {mireye.fema_flood_zone ? `Zone ${mireye.fema_flood_zone}` : '100-Yr Floodplain'}
+                </span>
+                <span className="text-[9px] text-slate-500 block truncate">
+                  {mireye.coastal_high_hazard ? 'Coastal Wave Hazard' : 'FEMA NFHL'}
+                </span>
+              </div>
+            )}
+
+            {mireye.landslide_susceptibility !== undefined && (
+              <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                <span className="text-[9px] text-slate-400 block uppercase">Landslide Susceptibility</span>
+                <span className={`text-xs font-bold ${mireye.landslide_susceptibility >= 60 ? 'text-rose-400' : mireye.landslide_susceptibility >= 30 ? 'text-amber-300' : 'text-slate-200'}`}>
+                  {mireye.landslide_susceptibility} / 100
+                </span>
+                <span className="text-[9px] text-slate-500 block">USGS Landslide Index</span>
+              </div>
+            )}
+
+            {mireye.nearest_dam_hazard && (
+              <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+                <span className="text-[9px] text-slate-400 block uppercase">USACE Dam Hazard</span>
+                <span className={`text-xs font-bold ${mireye.nearest_dam_hazard === 'High' ? 'text-rose-400' : 'text-amber-300'}`}>
+                  {mireye.nearest_dam_hazard}
+                </span>
+                <span className="text-[9px] text-slate-500 block">
+                  {mireye.nearest_dam_distance_m ? `${(mireye.nearest_dam_distance_m / 1000).toFixed(1)} km away` : 'National Dam Inventory'}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {sources.length > 0 && (
+        <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3 text-xs">
+          <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 font-mono">
+            <Layers className="h-3.5 w-3.5 text-cyan-400" /> Evidence sources
+          </div>
+          <div className="space-y-1.5">
+            {sources.map(({ name, source, url }) => (
+              <div key={name} className="flex items-center justify-between gap-3 text-[10px] font-mono">
+                <span className="truncate text-slate-400">{name.replaceAll('_', ' ')}</span>
+                {url ? <a href={url} target="_blank" rel="noreferrer" className="shrink-0 text-cyan-300 hover:text-cyan-200">{source}</a> : <span className="shrink-0 text-cyan-300">{source}</span>}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -238,55 +246,117 @@ export default function SampleInspector({ sample, onClose }) {
         <div className="space-y-2 pt-1">
           <div className="flex items-center justify-between">
             <h5 className="text-[11px] font-bold text-amber-400 font-mono uppercase tracking-wider flex items-center gap-1.5">
-              <Layers className="h-3.5 w-3.5 text-amber-400" /> FHWA National Bridge Inventory ({bridges.length})
+              <Layers className="h-3.5 w-3.5 text-amber-400" /> FHWA Bridge & Infrastructure ({bridges.length})
             </h5>
             <span className="text-[10px] bg-amber-950 text-amber-300 border border-amber-800/60 px-1.5 py-0.5 rounded font-mono">
-              NBI Data
+              NBI Multi-Component
             </span>
           </div>
 
           <div className="space-y-2">
-            {bridges.map((b, idx) => (
-              <div
-                key={b.structure_id + idx}
-                className="bg-slate-950 border border-slate-800 p-3 rounded-lg text-xs space-y-1.5"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="text-[10px] font-mono text-cyan-400 block font-bold">
-                      NBI Structure ID: {b.structure_id}
-                    </span>
-                    <h6 className="font-bold text-slate-100 text-xs">
-                      {b.location || b.facility || 'Highway Overpass/Bridge'}
-                    </h6>
-                  </div>
-                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
-                    b.condition_label.includes('Poor')
-                      ? 'bg-rose-950 text-rose-300 border-rose-800'
-                      : b.condition_label.includes('Fair')
-                      ? 'bg-amber-950 text-amber-300 border-amber-800'
-                      : 'bg-emerald-950 text-emerald-300 border-emerald-800'
-                  }`}>
-                    {b.condition_label}
-                  </span>
-                </div>
+            {bridges.map((b, idx) => {
+              const isDeficient = b.structurally_deficient || b.condition_label?.includes('Poor') || b.condition_label?.includes('Deficient');
+              const suff = b.sufficiency_rating;
 
-                <div className="grid grid-cols-3 gap-2 text-[11px] pt-1 border-t border-slate-800/80 font-mono text-slate-300">
-                  <div>
-                    <span className="text-[9px] text-slate-400 block uppercase">Built</span>
-                    <span>{b.year_built || 'N/A'} {b.age_years ? `(${b.age_years}y)` : ''}</span>
+              return (
+                <div
+                  key={b.structure_id + idx}
+                  className="bg-slate-950 border border-slate-800 p-3 rounded-lg text-xs space-y-2"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="text-[10px] font-mono text-cyan-400 block font-bold">
+                        NBI Structure ID: {b.structure_id}
+                      </span>
+                      <h6 className="font-bold text-slate-100 text-xs">
+                        {b.location || b.facility || 'Highway Bridge / Overpass'}
+                      </h6>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                        isDeficient
+                          ? 'bg-rose-950 text-rose-300 border-rose-800'
+                          : b.condition_label?.includes('Fair')
+                          ? 'bg-amber-950 text-amber-300 border-amber-800'
+                          : 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                      }`}>
+                        {b.condition_label}
+                      </span>
+                      {isDeficient && (
+                        <span className="text-[9px] font-mono uppercase font-bold text-rose-400 bg-rose-950/80 px-1.5 py-0.5 rounded border border-rose-800/80">
+                          STRUCTURALLY DEFICIENT
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[9px] text-slate-400 block uppercase">Daily Traffic</span>
-                    <span>{b.adt ? b.adt.toLocaleString() : 'N/A'} ADT</span>
+
+                  {/* Sufficiency Rating Bar (0-100) */}
+                  {suff != null && (
+                    <div className="bg-slate-900/90 p-2 rounded border border-slate-800 space-y-1">
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-slate-400">Sufficiency Rating (Item 66)</span>
+                        <span className={`font-bold ${suff < 50 ? 'text-rose-400' : suff < 75 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                          {suff.toFixed(1)} / 100
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className={`h-1.5 rounded-full transition-all duration-300 ${
+                            suff < 50 ? 'bg-rose-500' : suff < 75 ? 'bg-amber-500' : 'bg-emerald-500'
+                          }`}
+                          style={{ width: `${Math.max(5, Math.min(100, suff))}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 5-Component Condition Rating Grid (Items 58-62) */}
+                  <div className="grid grid-cols-5 gap-1 pt-1 text-center font-mono">
+                    {[
+                      { label: 'Deck (58)', val: b.deck_condition },
+                      { label: 'Super (59)', val: b.super_condition },
+                      { label: 'Sub (60)', val: b.sub_condition },
+                      { label: 'Channel (61)', val: b.channel_condition },
+                      { label: 'Culvert (62)', val: b.culvert_condition }
+                    ].map((comp, cIdx) => {
+                      const num = parseInt(comp.val, 10);
+                      const isNum = !isNaN(num);
+                      const colorClass = !isNum
+                        ? 'text-slate-500 bg-slate-900/50'
+                        : num <= 4
+                        ? 'text-rose-400 bg-rose-950/40 border-rose-800/60'
+                        : num <= 6
+                        ? 'text-amber-400 bg-amber-950/40 border-amber-800/60'
+                        : 'text-emerald-400 bg-emerald-950/40 border-emerald-800/60';
+
+                      return (
+                        <div key={cIdx} className={`p-1 rounded border border-slate-800/80 ${colorClass}`}>
+                          <span className="text-[8px] text-slate-400 block truncate">{comp.label}</span>
+                          <span className="text-[11px] font-bold block">{comp.val || '-'}</span>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div>
-                    <span className="text-[9px] text-slate-400 block uppercase">Proximity</span>
-                    <span>{b.distance_to_sample_m}m</span>
+
+
+                  {/* Structure Metadata Row */}
+                  <div className="grid grid-cols-3 gap-2 text-[11px] pt-1.5 border-t border-slate-800/80 font-mono text-slate-300">
+                    <div>
+                      <span className="text-[9px] text-slate-400 block uppercase">Built</span>
+                      <span>{b.year_built || 'N/A'} {b.age_years ? `(${b.age_years}y)` : ''}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 block uppercase">Daily Traffic</span>
+                      <span>{b.adt ? b.adt.toLocaleString() : 'N/A'} ADT</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 block uppercase">Proximity</span>
+                      <span>{b.distance_to_sample_m}m</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ) : (
@@ -295,6 +365,7 @@ export default function SampleInspector({ sample, onClose }) {
           <span>No NBI bridge or highway structures within 300m of this sample point.</span>
         </div>
       )}
+
     </div>
   );
 }

@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { MapPin, Navigation, Compass, CheckCircle2, Fuel, Plus } from 'lucide-react';
+import { MapPin, Navigation, Compass, CheckCircle2 } from 'lucide-react';
 
 const ROUTE_LINE_COLORS = {
   route_1: '#06b6d4', // Cyan
   route_2: '#a855f7', // Purple
   route_3: '#f59e0b', // Amber
   route_4: '#10b981', // Emerald
+  route_5: '#f43f5e', // Rose
 };
+
+const getRouteColor = (routeId) => ROUTE_LINE_COLORS[routeId] || '#38bdf8';
 
 // Custom Icon Helpers
 const createCustomMarkerIcon = (label, colorBg, borderColor) => {
@@ -34,42 +37,6 @@ const createCustomMarkerIcon = (label, colorBg, borderColor) => {
     `,
     iconSize: [28, 28],
     iconAnchor: [14, 14],
-  });
-};
-
-const createStationIcon = (type, speedTier) => {
-  const isGas = type === 'gas';
-  const isFastEV = type === 'ev_fast' || speedTier === 'fast';
-  
-  const colorBg = isGas ? '#f59e0b' : isFastEV ? '#10b981' : '#0284c7';
-  const borderCol = isGas ? '#fbbf24' : isFastEV ? '#34d399' : '#38bdf8';
-  const label = isGas ? 'GAS' : isFastEV ? 'FAST EV' : 'STD EV';
-  const width = isGas ? 28 : isFastEV ? 48 : 46;
-
-  return L.divIcon({
-    className: 'custom-station-marker',
-    html: `
-      <div style="
-        background-color: ${colorBg};
-        border: 1.5px solid ${borderCol};
-        color: #09090b;
-        font-family: monospace;
-        font-weight: 800;
-        font-size: 8px;
-        letter-spacing: -0.3px;
-        padding: 2px 3px;
-        border-radius: 4px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        white-space: nowrap;
-        box-shadow: 0 0 10px ${colorBg}80;
-      ">
-        ${label}
-      </div>
-    `,
-    iconSize: [width, 16],
-    iconAnchor: [width / 2, 8],
   });
 };
 
@@ -104,6 +71,44 @@ const createBottleneckIcon = (severity) => {
 
 const originIcon = createCustomMarkerIcon('A', '#10b981', '#ffffff');
 const destinationIcon = createCustomMarkerIcon('B', '#f43f5e', '#ffffff');
+const bridgeIcon = createCustomMarkerIcon('≈', '#f59e0b', '#fde68a');
+
+const createMireyeProbeMarkerIcon = (isSelected = false) => {
+  const size = isSelected ? 22 : 16;
+  return L.divIcon({
+    className: 'custom-mireye-icon',
+    html: `
+      <div style="
+        position: relative;
+        width: ${size}px;
+        height: ${size}px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">
+        <div style="
+          position: absolute;
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          background: rgba(16, 185, 129, 0.25);
+          border: 1.5px dashed #10b981;
+        "></div>
+        <div style="
+          width: ${isSelected ? 10 : 7}px;
+          height: ${isSelected ? 10 : 7}px;
+          background: ${isSelected ? '#38bdf8' : '#10b981'};
+          border: 1.5px solid #ffffff;
+          transform: rotate(45deg);
+          box-shadow: 0 0 8px rgba(16, 185, 129, 0.85);
+        "></div>
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+};
+
 
 // Map view bounds adjuster component
 function MapBoundsAdjuster({ bounds }) {
@@ -167,7 +172,6 @@ export default function MapView({
   onSetOrigin,
   onSetDestination,
   onSetWaypoint,
-  onAddWaypoint,
   rawOriginStr,
   rawDestinationStr,
   rawWaypoints = [],
@@ -177,9 +181,6 @@ export default function MapView({
   pickerMode,
   setPickerMode
 }) {
-  const [showRefuelHubs, setShowRefuelHubs] = useState(false);
-  const [refuelFilter, setRefuelFilter] = useState('all');
-
   const originObj = parseCoordStr(origin) || resolvedOrigin || parseCoordStr(rawOriginStr);
   const destinationObj = parseCoordStr(destination) || resolvedDestination || parseCoordStr(rawDestinationStr);
 
@@ -211,19 +212,6 @@ export default function MapView({
   }
 
   const selectedRouteObj = routes.find(r => r.route_id === selectedRouteId) || routes[0];
-
-  // Refueling infrastructure stations extraction with EV speed tiers
-  const infra = selectedRouteObj?.infrastructure || selectedRouteObj?.infrastructure_summary || {};
-  const gasStations = infra.gas_stations || [];
-  const evFastStations = infra.ev_fast_stations || (infra.ev_chargers || []).filter(c => c.speed_tier === 'fast' || c.station_type === 'ev_fast');
-  const evStdStations = infra.ev_standard_stations || (infra.ev_chargers || []).filter(c => c.speed_tier === 'standard' || c.station_type === 'ev_standard');
-  const allStations = [...gasStations, ...evFastStations, ...evStdStations];
-  
-  const stationsToRender = 
-    refuelFilter === 'gas' ? gasStations :
-    refuelFilter === 'fast_ev' ? evFastStations :
-    refuelFilter === 'std_ev' ? evStdStations :
-    allStations;
 
   // Construct preview path coordinates (Origin -> Waypoints -> Destination)
   const previewPositions = [];
@@ -348,66 +336,6 @@ export default function MapView({
           const positions = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
           const strokeColor = ROUTE_LINE_COLORS[route.route_id] || '#06b6d4';
 
-          // Build Google Maps style traffic color sub-segments if selected & traffic data exists
-          const hasTraffic = isSelected && route.samples && route.samples.some(s => s.traffic_flow);
-          const trafficSegments = [];
-
-          if (hasTraffic && route.samples.length > 1 && positions.length > 1) {
-            // Find nearest coordinate index in full road geometry for each sample point
-            const sampleGeoIndices = route.samples.map(s => {
-              let minD = Infinity;
-              let bestIdx = 0;
-              for (let pIdx = 0; pIdx < positions.length; pIdx++) {
-                const [lat, lon] = positions[pIdx];
-                const d = (lat - s.latitude) ** 2 + (lon - s.longitude) ** 2;
-                if (d < minD) {
-                  minD = d;
-                  bestIdx = pIdx;
-                }
-              }
-              return bestIdx;
-            });
-
-            for (let i = 0; i < route.samples.length - 1; i++) {
-              const s1 = route.samples[i];
-              const tf = s1.traffic_flow;
-
-              const idxStart = sampleGeoIndices[i];
-              const idxEnd = Math.max(idxStart + 1, sampleGeoIndices[i + 1]);
-              const segCoords = positions.slice(idxStart, idxEnd + 1);
-
-              if (segCoords.length < 2) continue;
-
-              let segColor = strokeColor;
-              let condStr = "Traffic Flow Normal";
-              let speedStr = "";
-
-              if (tf) {
-                if (tf.road_closed) {
-                  segColor = '#991b1b'; // Dark Crimson (Closed)
-                  condStr = "Road Closed";
-                } else if (tf.congestion_condition.includes('Heavy')) {
-                  segColor = '#ef4444'; // Red (Heavy)
-                  condStr = "Heavy Congestion";
-                } else if (tf.congestion_condition.includes('Moderate')) {
-                  segColor = '#f59e0b'; // Amber (Moderate)
-                  condStr = "Moderate Traffic";
-                } else if (tf.congestion_condition.includes('Free')) {
-                  segColor = '#10b981'; // Green (Free Flow)
-                  condStr = "Free Flow";
-                }
-                speedStr = `${tf.current_speed_kmh} km/h`;
-              }
-
-              trafficSegments.push({
-                coords: segCoords,
-                color: segColor,
-                condition: condStr,
-                speed: speedStr
-              });
-            }
-          }
-
           return (
             <React.Fragment key={route.route_id}>
               {/* Outer Glow for Selected Route */}
@@ -417,318 +345,176 @@ export default function MapView({
                   pathOptions={{
                     color: strokeColor,
                     weight: 10,
-                    opacity: 0.25,
+                    opacity: 0.35,
                     lineCap: 'round',
                     lineJoin: 'round'
                   }}
                 />
               )}
 
-              {/* Selected Route with Google Maps Multi-Color Traffic Segments */}
-              {isSelected && hasTraffic && trafficSegments.length > 0 ? (
-                trafficSegments.map((seg, sIdx) => (
-                  <Polyline
-                    key={`seg-${route.route_id}-${sIdx}`}
-                    positions={seg.coords}
-                    eventHandlers={{
-                      click: () => onSelectRoute(route.route_id)
-                    }}
-                    pathOptions={{
-                      color: seg.color,
-                      weight: 6,
-                      opacity: 1.0,
-                      lineCap: 'round',
-                      lineJoin: 'round'
-                    }}
-                  >
-                    <Tooltip sticky className="custom-traffic-tooltip" direction="top" offset={[0, -4]}>
-                      <div className="font-mono text-[10px] text-zinc-100 flex items-center gap-1.5 leading-none">
-                        <span className={`font-bold ${
-                          seg.color === '#10b981' ? 'text-emerald-400' :
-                          seg.color === '#f59e0b' ? 'text-amber-400' :
-                          seg.color === '#ef4444' ? 'text-rose-400' : 'text-rose-500'
-                        }`}>
-                          ● {seg.condition}
-                        </span>
-                        {seg.speed && <span className="text-zinc-400 font-normal">({seg.speed})</span>}
-                      </div>
-                    </Tooltip>
-                  </Polyline>
-                ))
-              ) : (
-                /* Unselected Route OR Selected Route without Traffic data */
-                <Polyline
-                  positions={positions}
-                  eventHandlers={{
-                    click: () => onSelectRoute(route.route_id)
-                  }}
-                  pathOptions={{
-                    color: strokeColor,
-                    weight: isSelected ? 6 : 4,
-                    opacity: isSelected ? 1.0 : 0.40,
-                    dashArray: isSelected ? null : '6, 8',
-                    lineCap: 'round',
-                    lineJoin: 'round'
-                  }}
-                />
-              )}
+              {/* Main Line */}
+              <Polyline
+                positions={positions}
+                eventHandlers={{
+                  click: () => onSelectRoute(route.route_id)
+                }}
+                pathOptions={{
+                  color: strokeColor,
+                  weight: isSelected ? 6 : 4,
+                  opacity: isSelected ? 1.0 : 0.45,
+                  dashArray: isSelected ? null : '6, 8',
+                  lineCap: 'round',
+                  lineJoin: 'round'
+                }}
+              />
             </React.Fragment>
           );
         })}
 
-        {/* Render Mireye Natural Hazard Probe Samples Only (Hides non-Mireye speed dots) */}
+        {/* Render physical distance samples with distinct Mireye probe highlights */}
         {showSamples && selectedRouteObj && selectedRouteObj.samples && (
-          selectedRouteObj.samples
-            .filter(sample => sample.is_mireye_probed || (selectedSample && selectedSample.sample_id === sample.sample_id))
-            .map(sample => {
-              const isSampleSelected = selectedSample && selectedSample.sample_id === sample.sample_id;
-              const isMireyeProbed = sample.is_mireye_probed;
-              const hazardScore = sample.hazard_score || 0;
-              const distKm = (sample.distance_from_origin_m / 1000.0).toFixed(2);
+          selectedRouteObj.samples.map(sample => {
+            const isSampleSelected = selectedSample && selectedSample.sample_id === sample.sample_id;
+            const isMireyeProbed = sample.is_mireye_probed;
+            const hazardScore = sample.hazard_score || 0;
+            const distKm = (sample.distance_from_origin_m / 1000.0).toFixed(2);
 
-            // Color by hazard score
+            // Subtle color coding by hazard score
             let fillColor = '#06b6d4'; // Default cyan
             if (hazardScore > 0.5) fillColor = '#ef4444'; // Red
             else if (hazardScore > 0.3) fillColor = '#f59e0b'; // Amber
             else if (hazardScore > 0.1) fillColor = '#22d3ee'; // Light cyan
 
-            const radius = isSampleSelected ? 7 : isMireyeProbed ? 6 : 4;
+            const popupContent = (
+              <Popup>
+                <div className="p-1 space-y-1.5 font-sans text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold text-cyan-400 font-mono block">
+                      {sample.sample_id}
+                    </span>
+                    {isMireyeProbed && (
+                      <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-600 font-mono font-bold">
+                        MIREYE PROBE
+                      </span>
+                    )}
+                  </div>
+                  <div className="font-bold text-slate-100 font-mono text-[11px]">
+                    Distance: <span className="text-cyan-300">{distKm} km</span>
+                  </div>
+                  {hazardScore > 0 && (
+                    <div className="text-[10px] text-slate-300 font-mono">
+                      Hazard Score: <span className={hazardScore > 0.3 ? 'text-amber-400 font-bold' : 'text-slate-300'}>{hazardScore.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {sample.slope_pct != null && (
+                    <div className="text-[10px] text-slate-400 font-mono">
+                      Slope: <span className={Math.abs(sample.slope_pct) > 8 ? 'text-rose-400 font-bold' : 'text-slate-300'}>{sample.slope_pct.toFixed(1)}%</span>
+                    </div>
+                  )}
+                  {sample.nbi_bridges && sample.nbi_bridges.length > 0 && (
+                    <div className="text-[10px] text-amber-300 font-mono">
+                      Bridges nearby: {sample.nbi_bridges.length}
+                    </div>
+                  )}
+                </div>
+              </Popup>
+            );
+
+            if (isMireyeProbed) {
+              return (
+                <Marker
+                  key={sample.sample_id}
+                  position={[sample.latitude, sample.longitude]}
+                  icon={createMireyeProbeMarkerIcon(isSampleSelected)}
+                  eventHandlers={{
+                    click: () => onSelectSample(sample)
+                  }}
+                >
+                  {popupContent}
+                </Marker>
+              );
+            }
 
             return (
               <CircleMarker
                 key={sample.sample_id}
                 center={[sample.latitude, sample.longitude]}
-                radius={radius}
+                radius={isSampleSelected ? 7 : 2.5}
                 eventHandlers={{
                   click: () => onSelectSample(sample)
                 }}
                 pathOptions={{
                   fillColor: isSampleSelected ? '#38bdf8' : fillColor,
-                  fillOpacity: 0.9,
-                  color: isMireyeProbed ? '#10b981' : isSampleSelected ? '#ffffff' : '#0f172a',
-                  weight: isMireyeProbed ? 3 : isSampleSelected ? 3 : 1.5
+                  fillOpacity: isSampleSelected ? 1.0 : 0.45,
+                  color: isSampleSelected ? '#ffffff' : '#0f172a',
+                  weight: isSampleSelected ? 2 : 1
                 }}
               >
-                <Popup>
-                  <div className="p-1 space-y-1 font-sans text-xs">
-                    <span className="text-[10px] font-bold text-cyan-400 font-mono block">
-                      {sample.sample_id}
-                    </span>
-                    <div className="font-bold text-slate-100">
-                      Distance: <span className="text-cyan-300 font-mono">{distKm} km</span>
-                    </div>
-                    {isMireyeProbed && (
-                      <span className="text-[9px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-700 font-mono inline-block">
-                        Mireye Sample
-                      </span>
-                    )}
-                    {hazardScore > 0 && (
-                      <div className="text-[10px] text-slate-400 font-mono">
-                        Hazard Score: <span className={hazardScore > 0.3 ? 'text-amber-400 font-bold' : 'text-slate-300'}>{hazardScore.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {sample.slope_pct != null && (
-                      <div className="text-[10px] text-slate-400 font-mono">
-                        Slope: <span className={Math.abs(sample.slope_pct) > 8 ? 'text-rose-400 font-bold' : 'text-slate-300'}>{sample.slope_pct.toFixed(1)}%</span>
-                      </div>
-                    )}
-                    {sample.traffic_flow && (
-                      <div className="text-[10px] text-amber-300 font-mono flex items-center gap-1 mt-1 border-t border-slate-800 pt-1">
-                        <span>Speed: {sample.traffic_flow.current_speed_kmh} km/h ({sample.traffic_flow.congestion_condition})</span>
-                      </div>
-                    )}
-                  </div>
-                </Popup>
+                {popupContent}
               </CircleMarker>
             );
           })
         )}
 
-        {/* Bottleneck Warning Markers */}
-        {showSamples && bottlenecks.map((bn, idx) => (
-          <Marker
-            key={`bn-${idx}`}
-            position={[bn.latitude, bn.longitude]}
-            icon={createBottleneckIcon(bn.severity_label)}
-          >
-            <Popup>
-              <div className="p-1 space-y-1 font-sans text-xs max-w-[220px]">
-                <span className={`text-[10px] font-bold uppercase font-mono block ${
-                  bn.severity_label === 'Critical' ? 'text-rose-400' : 'text-amber-400'
-                }`}>
-                  {bn.severity_label} Bottleneck
-                </span>
-                <div className="text-[10px] text-slate-300 font-mono">
-                  BSI: <span className="font-bold">{bn.bsi_score.toFixed(2)}</span>
-                </div>
-                <p className="text-[10px] text-slate-400 leading-relaxed">
-                  {bn.description}
-                </p>
-                <div className="text-[9px] text-slate-500 font-mono">
-                  {(bn.distance_from_origin_m / 1000).toFixed(1)} km from origin
-                </div>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-        {/* Refueling Infrastructure Station Markers */}
-        {showRefuelHubs && stationsToRender.map(st => {
-          const isGas = st.station_type === 'gas';
-          const isFast = st.station_type === 'ev_fast' || st.speed_tier === 'fast';
 
-          const badgeClasses = isGas 
-            ? 'bg-amber-950/80 border-amber-700 text-amber-300'
-            : isFast
-            ? 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
-            : 'bg-sky-950/80 border-sky-700 text-sky-300';
 
-          return (
+        {/* Peak Bottleneck Markers (Top Critical & Moderate Chokepoints - Spaced >= 5km) */}
+        {(() => {
+          const criticalBns = (selectedRouteObj?.bottlenecks || [])
+            .filter(bn => bn.severity_label === 'Critical' || bn.bsi_score >= 0.40)
+            .sort((a, b) => b.bsi_score - a.bsi_score);
+
+          // Deduplicate spatially so we only show top distinct chokepoints
+          const distinctBns = [];
+          for (const bn of criticalBns) {
+            const isNear = distinctBns.some(
+              d => Math.hypot(d.latitude - bn.latitude, d.longitude - bn.longitude) < 0.03
+            );
+            if (!isNear && distinctBns.length < 6) {
+              distinctBns.push(bn);
+            }
+          }
+
+          return distinctBns.map((bn, idx) => (
             <Marker
-              key={st.id}
-              position={[st.latitude, st.longitude]}
-              icon={createStationIcon(st.station_type, st.speed_tier)}
+              key={`peak-bn-${idx}`}
+              position={[bn.latitude, bn.longitude]}
+              icon={createBottleneckIcon(bn.severity_label)}
+              eventHandlers={{
+                click: () => {
+                  if (onSelectSample && selectedRouteObj?.samples) {
+                    const matchedSample = selectedRouteObj.samples.find(s => s.sample_id === bn.sample_id);
+                    if (matchedSample) onSelectSample(matchedSample);
+                  }
+                }
+              }}
             >
               <Popup>
-                <div className="p-1 space-y-1.5 font-sans text-xs min-w-[220px]">
-                  <div className="flex items-center justify-between">
-                    <span className={`text-[9px] font-extrabold uppercase font-mono px-1.5 py-0.5 rounded border ${badgeClasses}`}>
-                      {st.speed_label || (isGas ? 'Gasoline / Diesel' : isFast ? 'DC Fast Charger' : 'Standard AC')}
+                <div className="p-1 space-y-1 font-sans text-xs max-w-[240px]">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className={`text-[10px] font-bold uppercase font-mono px-1.5 py-0.5 rounded ${
+                      bn.severity_label === 'Critical' ? 'bg-rose-950 text-rose-300 border border-rose-800' : 'bg-amber-950 text-amber-300 border border-amber-800'
+                    }`}>
+                      {bn.severity_label} Chokepoint
                     </span>
-                    <span className="text-[9px] text-zinc-400 font-mono">
-                      {st.offset_distance_m}m off-route
+                    <span className="text-[10px] font-bold font-mono text-rose-400">
+                      BSI: {bn.bsi_score.toFixed(2)}
                     </span>
                   </div>
-
-                  <div className="font-bold text-zinc-100 text-xs leading-snug">
-                    {st.name}
+                  <p className="text-[11px] text-slate-200 font-medium leading-tight">
+                    {bn.description}
+                  </p>
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-[9px] text-slate-400 font-mono">
+                    <span>Sample: {bn.sample_id}</span>
+                    <span>{(bn.distance_from_origin_m / 1000).toFixed(1)} km along route</span>
                   </div>
-
-                  {st.brand && st.brand !== st.name && (
-                    <div className="text-[10px] text-zinc-400 font-mono">
-                      Network: {st.brand}
-                    </div>
-                  )}
-
-                  {/* Stall Capacity & Power Tier */}
-                  <div className="bg-zinc-900/90 border border-zinc-800 rounded p-1.5 space-y-1 text-[10px] font-mono">
-                    <div className="flex items-center justify-between text-zinc-300">
-                      <span>Capacity:</span>
-                      <span className="font-bold text-zinc-100">{st.stalls_display || (isGas ? 'Multi-Pump' : 'Standard Stalls')}</span>
-                    </div>
-                    {st.power_label && (
-                      <div className="flex items-center justify-between text-zinc-300">
-                        <span>Output:</span>
-                        <span className="text-zinc-300">{st.power_label}</span>
-                      </div>
-                    )}
-                    {st.est_charge_time && (
-                      <div className="flex items-center justify-between text-zinc-300">
-                        <span>Est. Service:</span>
-                        <span className={isGas ? 'text-amber-300 font-semibold' : isFast ? 'text-emerald-300 font-semibold' : 'text-sky-300'}>
-                          {st.est_charge_time}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="text-[10px] text-cyan-300 font-mono">
-                    Corridor Point: {st.distance_from_origin_km} km from origin
-                  </div>
-
-                  {onAddWaypoint && (
-                    <button
-                      type="button"
-                      onClick={() => onAddWaypoint({
-                        latitude: st.latitude,
-                        longitude: st.longitude,
-                        query: st.name,
-                        display_name: st.name
-                      })}
-                      className="w-full mt-1 px-2 py-1 bg-cyan-950 hover:bg-cyan-900 border border-cyan-700 text-cyan-200 text-[10px] font-mono font-semibold rounded flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                    >
-                      <Plus className="h-3 w-3 text-cyan-400" /> Add as Refuel Waypoint
-                    </button>
-                  )}
                 </div>
               </Popup>
             </Marker>
-          );
-        })}
+          ));
+        })()}
+
       </MapContainer>
-
-      {/* Minimalist Floating Refuel & EV Map HUD */}
-      {routes && routes.length > 0 && (
-        <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5 bg-zinc-900/90 backdrop-blur-md p-1 rounded-lg border border-zinc-800 shadow-xl">
-          <button
-            type="button"
-            onClick={() => setShowRefuelHubs(!showRefuelHubs)}
-            title={showRefuelHubs ? "Hide Gas & EV Stations" : "Show Gas & EV Stations"}
-            className={`p-1.5 rounded-md text-[11px] font-mono flex items-center justify-center transition-all cursor-pointer ${
-              showRefuelHubs
-                ? 'bg-amber-950/90 border border-amber-500/80 text-amber-200 shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
-            }`}
-          >
-            <Fuel className={`h-4 w-4 ${showRefuelHubs ? 'text-amber-400' : 'text-zinc-400'}`} />
-          </button>
-
-          {/* Micro Filter Pills when active */}
-          {showRefuelHubs && (
-            <div className="flex items-center gap-1 border-l border-zinc-800 pl-1.5 text-[9px] font-mono">
-              {allStations.length > 0 ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setRefuelFilter('all')}
-                    className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
-                      refuelFilter === 'all'
-                        ? 'bg-zinc-700 text-white font-bold'
-                        : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    All ({allStations.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRefuelFilter('gas')}
-                    className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
-                      refuelFilter === 'gas'
-                        ? 'bg-amber-900/80 border border-amber-600/60 text-amber-200 font-bold'
-                        : 'text-zinc-400 hover:text-amber-300'
-                    }`}
-                  >
-                    Gas ({gasStations.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRefuelFilter('fast_ev')}
-                    className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
-                      refuelFilter === 'fast_ev'
-                        ? 'bg-emerald-900/80 border border-emerald-600/60 text-emerald-200 font-bold'
-                        : 'text-zinc-400 hover:text-emerald-300'
-                    }`}
-                  >
-                    Fast EV ({evFastStations.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRefuelFilter('std_ev')}
-                    className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
-                      refuelFilter === 'std_ev'
-                        ? 'bg-sky-900/80 border border-sky-600/60 text-sky-200 font-bold'
-                        : 'text-zinc-400 hover:text-sky-300'
-                    }`}
-                  >
-                    Std EV ({evStdStations.length})
-                  </button>
-                </>
-              ) : (
-                <span className="px-1.5 py-0.5 text-zinc-400 text-[9px]">None within 1.5km</span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Legend & Controls Overlay - ONLY SHOWN IF ROUTES ARE PRESENT */}
       {routes && routes.length > 0 && (
@@ -737,21 +523,14 @@ export default function MapView({
             <span>CORRIDOR LEGEND</span>
           </div>
           <div className="space-y-1 text-[11px]">
-            <div className="flex items-center space-x-2">
-              <span className="h-3 w-3 rounded-full bg-cyan-500 shadow-sm shadow-cyan-500/50"></span>
-              <span className="text-slate-200">Route 1 (Primary / Fastest)</span>
-            </div>
-            {routes.length > 1 && (
-              <div className="flex items-center space-x-2">
-                <span className="h-3 w-3 rounded-full bg-purple-500 shadow-sm shadow-purple-500/50"></span>
-                <span className="text-slate-300">Route 2 (Alternative 1)</span>
+            {routes.map((route, index) => (
+              <div key={route.route_id} className="flex items-center space-x-2">
+                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: ROUTE_LINE_COLORS[route.route_id] || '#06b6d4' }}></span>
+                <span className={route.route_id === selectedRouteId ? 'text-slate-100' : 'text-slate-400'}>{route.tag || `Corridor ${index + 1}`}{route.route_id === selectedRouteId ? ' · selected' : ''}</span>
               </div>
-            )}
-            {routes.length > 2 && (
-              <div className="flex items-center space-x-2">
-                <span className="h-3 w-3 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50"></span>
-                <span className="text-slate-300">Route 3 (Alternative 2)</span>
-              </div>
+            ))}
+            {selectedRouteObj?.samples?.some((sample) => sample.nbi_bridges?.length) && (
+              <div className="flex items-center space-x-2"><span className="flex h-3 w-3 items-center justify-center rounded-full bg-amber-500 text-[8px] text-slate-950">≈</span><span className="text-slate-300">NBI bridge evidence</span></div>
             )}
           </div>
           {/* Hazard color key */}

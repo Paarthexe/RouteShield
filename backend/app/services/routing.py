@@ -23,7 +23,8 @@ class RoutingService:
         origin: Coordinate,
         destination: Coordinate,
         waypoints: Optional[List[Coordinate]] = None,
-        sample_interval_m: Optional[float] = None
+        sample_interval_m: Optional[float] = None,
+        disaster_type: str = "ALL_HAZARDS"
     ) -> List[Route]:
         interval = sample_interval_m or settings.ROUTE_SAMPLE_INTERVAL_M
         w_list = waypoints or []
@@ -53,7 +54,8 @@ class RoutingService:
             samples = await sampling_service.sample_route(
                 route_id=route_id,
                 geometry=geometry,
-                interval_m=interval
+                interval_m=interval,
+                disaster_type=disaster_type
             )
             infra_data = infrastructure_service.project_stations_for_route(regional_stations, coords, dist_m)
 
@@ -128,7 +130,8 @@ class RoutingService:
         origin_loc: Location,
         destination_loc: Location,
         waypoints: Optional[List[Coordinate]] = None,
-        sample_interval_m: Optional[float] = None
+        sample_interval_m: Optional[float] = None,
+        disaster_type: str = "ALL_HAZARDS"
     ) -> tuple:
         """
         Generate routes AND run the full agent analysis pipeline.
@@ -138,11 +141,17 @@ class RoutingService:
             origin=origin,
             destination=destination,
             waypoints=waypoints,
-            sample_interval_m=sample_interval_m
+            sample_interval_m=sample_interval_m,
+            disaster_type=disaster_type
         )
 
         # Run agentic analysis pipeline
-        agent_decision = await run_agent_analysis(routes, origin_loc, destination_loc)
+        agent_decision = await run_agent_analysis(
+            routes,
+            origin_loc,
+            destination_loc,
+            disaster_type=disaster_type
+        )
 
         return routes, agent_decision
 
