@@ -65,6 +65,16 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
         waypoint_locs.append(w_loc)
         waypoint_coords.append(w_coord)
 
+    # Guard against collapsed corridors from identical geocodes / same pin twice
+    if (
+        abs(origin_coord.latitude - dest_coord.latitude) < 1e-5
+        and abs(origin_coord.longitude - dest_coord.longitude) < 1e-5
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Origin and destination resolve to the same coordinates. Choose two distinct locations."
+        )
+
     interval = payload.sample_interval_m or settings.ROUTE_SAMPLE_INTERVAL_M
     disaster_mode = payload.disaster_type or "ALL_HAZARDS"
 

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from fastapi import HTTPException
 from app.services.geocoding import GeocodingService
 from app.models.route_models import Location
@@ -37,22 +37,39 @@ async def test_resolve_location_empty_query():
     assert excinfo.value.status_code == 400
 
 @pytest.mark.asyncio
-async def test_resolve_location_missing_api_key():
+async def test_resolve_location_nominatim_without_mireye_key():
     service = GeocodingService()
     service.mireye_api_key = ""
-    with pytest.raises(HTTPException) as excinfo:
-        await service.resolve_location("Uncached Test Address 999")
-    assert excinfo.value.status_code == 500
+
+    with patch("httpx.AsyncClient.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = [{
+            "lat": "39.7596",
+            "lon": "-121.6219",
+            "display_name": "Paradise, Butte County, California, United States"
+        }]
+        mock_get.return_value = mock_resp
+
+        location = await service.resolve_location("Uncached Paradise Place 999")
+        assert location.latitude == 39.7596
+        assert location.longitude == -121.6219
+        assert "Paradise" in location.display_name
 
 @pytest.mark.asyncio
 async def test_resolve_location_not_found():
     service = GeocodingService()
     service.mireye_api_key = "test_key"
-    with patch("httpx.AsyncClient.post") as mock_post:
+    with patch("httpx.AsyncClient.post") as mock_post, patch("httpx.AsyncClient.get") as mock_get:
         mock_resp = MagicMock()
         mock_resp.status_code = 404
         mock_resp.text = "Not found"
         mock_post.return_value = mock_resp
+
+        mock_nom = MagicMock()
+        mock_nom.status_code = 200
+        mock_nom.json.return_value = []
+        mock_get.return_value = mock_nom
 
         with pytest.raises(HTTPException) as excinfo:
             await service.resolve_location("nonexistent_place_123456789")

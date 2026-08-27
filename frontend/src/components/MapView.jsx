@@ -11,7 +11,14 @@ import {
   useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
-import { MapPin, Navigation, Compass, CheckCircle2, Fuel, Plus } from "lucide-react";
+import {
+  MapPin,
+  Navigation,
+  Compass,
+  CheckCircle2,
+  Fuel,
+  Plus,
+} from "lucide-react";
 
 const ROUTE_LINE_COLORS = {
   route_1: "#06b6d4", // Cyan
@@ -260,6 +267,13 @@ export default function MapView({
   // Build bottleneck data for the selected route
   const bottlenecks = selectedRouteObj?.bottlenecks || [];
 
+  // CARTO raster basemaps watermark tiles unless ?key= is a valid free basemap API key
+  // Request one at https://carto.com/basemaps/apikey (param name is `key`, not `api_key`)
+  const cartoApiKey = import.meta.env.VITE_CARTO_API_KEY || "";
+  const tileUrl = cartoApiKey
+    ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cartoApiKey)}`
+    : `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png`;
+
   return (
     <div className="relative w-full h-full min-h-[600px] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
       <MapContainer
@@ -270,7 +284,8 @@ export default function MapView({
       >
         <TileLayer
           attribution='&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          url={tileUrl}
+          subdomains="abcd"
           maxZoom={19}
         />
 
