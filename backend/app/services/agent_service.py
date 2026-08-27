@@ -1,8 +1,10 @@
 import logging
 from typing import List, Optional
+from app.config import settings
 from app.models.route_models import Route, AgentDecision, AgentStep, Location
 from app.services.bottleneck_service import analyze_route_bottlenecks
-from app.services.viability_service import assess_route_viability, rank_routes
+from app.services.viability_service import assess_route_viability, rank_routes, risk_model_metadata
+from app.services.redundancy_service import select_independent_backup
 from app.services.mireye_service import mireye_data_service
 
 logger = logging.getLogger(__name__)
@@ -30,14 +32,15 @@ async def run_agent_analysis(
         detail=f"Received {len(routes)} candidate evacuation corridors from {origin.display_name} to {destination.display_name} under {disaster_label} protocol"
     ))
 
-    # --- Step 2: Bottleneck Analysis ---
+    # --- Step 2: Bottleneck Detection across all corridors ---
     step_num += 1
     total_bottlenecks = 0
     total_critical = 0
-    for route in routes:
-        bottlenecks, route = analyze_route_bottlenecks(route, disaster_type=disaster_type)
-        total_bottlenecks += len(bottlenecks)
-        total_critical += sum(1 for b in bottlenecks if b.severity_label == "Critical")
+    for idx, route in enumerate(routes):
+        bns, updated_route = analyze_route_bottlenecks(route, disaster_type=disaster_type)
+        routes[idx] = updated_route
+        total_bottlenecks += len(bns)
+        total_critical += sum(1 for b in bns if b.severity_label == "Critical")
 
     steps.append(AgentStep(
         step_number=step_num,
@@ -45,7 +48,7 @@ async def run_agent_analysis(
         detail=f"Identified {total_bottlenecks} hazard-infrastructure bottlenecks across all corridors ({total_critical} critical)"
     ))
 
-    # --- Step 3: Viability Scoring ---
+    # --- Step 3: Viability Assessment ---
     step_num += 1
     fastest_duration = min(r.duration_s for r in routes) if routes else 0
     for route in routes:
@@ -60,12 +63,20 @@ async def run_agent_analysis(
         detail=f"Computed viability scores — {score_summary}"
     ))
 
-    # --- Step 4: Route Ranking ---
+    # --- Step 4: Route Ranking & Backup Redundancy Check ---
     step_num += 1
     ranked_routes = rank_routes(routes)
 
     primary = next((r for r in ranked_routes if r.viability and r.viability.status == "PRIMARY"), None)
-    backup = next((r for r in ranked_routes if r.viability and r.viability.status == "BACKUP"), None)
+    backup = None
+    backup_independence = None
+    if primary:
+        for route in ranked_routes:
+            if route.viability and route.viability.status in {"BACKUP", "ALTERNATIVE"}:
+                route.viability.status = "ALTERNATIVE"
+        backup, backup_independence = select_independent_backup(primary, ranked_routes)
+        if backup and backup.viability:
+            backup.viability.status = "BACKUP"
     rejected = [r for r in ranked_routes if r.viability and r.viability.status == "REJECTED"]
 
     ranking_detail = []
@@ -73,8 +84,12 @@ async def run_agent_analysis(
         ranking_detail.append(f"PRIMARY: {primary.route_id} (Score: {primary.viability.score:.0f})")
     if backup:
         ranking_detail.append(f"BACKUP: {backup.route_id} (Score: {backup.viability.score:.0f})")
+        if backup_independence:
+            ranking_detail.append(f"BACKUP INDEPENDENCE: {backup_independence.independence_score:.0f}/100")
+    elif backup_independence:
+        ranking_detail.append(f"NO INDEPENDENT BACKUP: {backup_independence.explanation}")
     for r in rejected:
-        ranking_detail.append(f"REJECTED: {r.route_id} — {'; '.join(r.viability.rejection_reasons)}")
+        ranking_detail.append(f"REJECTED: {r.route_id} ({'; '.join(r.viability.rejection_reasons)})")
 
     steps.append(AgentStep(
         step_number=step_num,
@@ -159,11 +174,33 @@ async def run_agent_analysis(
         trade_off_explanation=trade_off_explanation,
         steps=steps,
         mireye_insight=mireye_insight,
+        backup_independence=backup_independence,
+        risk_model=risk_model_metadata(),
+        evidence_coverage=_build_evidence_coverage(routes),
         disaster_type=disaster_type
     )
 
     logger.info(f"Agent Decision: Primary={decision.primary_route_id}, Backup={decision.backup_route_id}")
     return decision
+
+
+def _build_evidence_coverage(routes: List[Route]) -> dict:
+    samples = [sample for route in routes for sample in route.samples]
+    mireye_samples = [sample for sample in samples if sample.is_mireye_probed]
+    bridge_samples = [sample for sample in samples if sample.nbi_bridges]
+    source_names = set()
+    for sample in mireye_samples:
+        for field in (sample.mireye_data or {}).get("raw_fields", {}).values():
+            if isinstance(field, dict) and field.get("source"):
+                source_names.add(field["source"])
+    return {
+        "route_count": len(routes),
+        "sample_count": len(samples),
+        "mireye_probe_count": len(mireye_samples),
+        "bridge_evidence_sample_count": len(bridge_samples),
+        "sources": sorted(source_names),
+        "collection_policy": f"Open-Meteo elevation covers all samples; Mireye fetch targets up to {settings.MIREYE_MAX_PROBES} high-value samples per route with at most {settings.MIREYE_MAX_CONCURRENCY} concurrent requests; Mireye Ask is reserved for the single worst bottleneck.",
+    }
 
 
 def _build_ask_question(bottleneck, route_id: str, origin, destination, routes: list, disaster_type: str = "ALL_HAZARDS") -> str:

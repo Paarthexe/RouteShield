@@ -14,6 +14,23 @@ REJECT_BSI_THRESHOLD = 3.5          # Catastrophic bottleneck threshold
 REJECT_HAZARD_EXPOSURE_PCT = 0.45   # > 45% of samples with hazard_score > 0.5 = auto-reject
 
 
+def risk_model_metadata() -> dict:
+    """Return the transparent scoring contract sent with every decision."""
+    return {
+        "version": "1.0",
+        "score_formula": {
+            "hazard_exposure_weight": W_HAZARD_EXPOSURE,
+            "bottleneck_penalty_weight": W_BOTTLENECK_PENALTY,
+            "travel_time_penalty_weight": W_TIME_DELTA,
+        },
+        "viability_gate": {
+            "catastrophic_bottleneck_bsi": REJECT_BSI_THRESHOLD,
+            "high_hazard_exposure_pct": REJECT_HAZARD_EXPOSURE_PCT * 100,
+        },
+        "interpretation": "Scores rank routes only after the explicit viability gate rejects critical corridors.",
+    }
+
+
 def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViability:
     """
     Calculate viability score (0-100) for a route and determine its status.
@@ -128,17 +145,11 @@ def rank_routes(routes: List[Route]) -> List[Route]:
                 route.viability.status = "BACKUP"
             else:
                 route.viability.status = "ALTERNATIVE"
-            route.viability.rejection_reasons = []
         all_ranked = candidates + rejected
     else:
-        # Fallback if all corridors triggered hazards: select least-vulnerable corridors as PRIMARY/BACKUP
+        # No viable corridor exists. Keep every route REJECTED and sort by score
+        # so the least vulnerable option can still be reviewed as a contingency.
         rejected.sort(key=lambda r: r.viability.score if r.viability else 0, reverse=True)
-        if rejected:
-            rejected[0].viability.status = "PRIMARY"
-            rejected[0].viability.rejection_reasons = []
-            if len(rejected) > 1:
-                rejected[1].viability.status = "BACKUP"
-                rejected[1].viability.rejection_reasons = []
         all_ranked = rejected
 
     return all_ranked
