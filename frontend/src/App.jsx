@@ -3,7 +3,6 @@ import Header from "./components/Header";
 import LocationInput from "./components/LocationInput";
 import RouteCard from "./components/RouteCard";
 import MapView from "./components/MapView";
-import SampleInspector from "./components/SampleInspector";
 import ErrorNotice from "./components/ErrorNotice";
 import AgentBriefing from "./components/AgentBriefing";
 import ElevationProfile from "./components/ElevationProfile";
@@ -198,7 +197,9 @@ export default function App() {
   const selectedRouteObj = analysisData?.routes?.find(
     (r) => r.route_id === selectedRouteId,
   );
-  const fastestDuration = analysisData?.routes?.[0]?.travel_time_min;
+  const fastestDuration = analysisData?.routes?.length
+    ? Math.min(...analysisData.routes.map((route) => route.travel_time_min))
+    : undefined;
 
   return (
     <div className="min-h-screen flex flex-col bg-zinc-950 text-zinc-100 font-sans">
@@ -444,14 +445,6 @@ export default function App() {
 
           {/* Elevation Profile */}
           {selectedRouteObj && <ElevationProfile route={selectedRouteObj} />}
-
-          {/* Physical Sample Point Inspector Panel */}
-          {selectedSample && (
-            <SampleInspector
-              sample={selectedSample}
-              onClose={() => setSelectedSample(null)}
-            />
-          )}
 
           {analysisData && (
             <RouteComparison

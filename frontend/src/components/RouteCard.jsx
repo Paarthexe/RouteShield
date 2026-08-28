@@ -143,6 +143,24 @@ export default function RouteCard({
       ? Math.round((route.travel_time_min - fastestDuration) * 10) / 10
       : 0;
 
+  const weatherSamples = (route.samples || []).filter((sample) => sample.weather);
+  const maxRainChance = weatherSamples.length
+    ? Math.max(...weatherSamples.map((sample) => sample.weather?.precipitation_probability_pct ?? 0))
+    : 0;
+  const maxWindGust = weatherSamples.length
+    ? Math.max(...weatherSamples.map((sample) => sample.weather?.wind_gust_kmh ?? 0))
+    : 0;
+  const minVisibilityKm = weatherSamples.length
+    ? Math.min(...weatherSamples.map((sample) => {
+        const visibilityM = sample.weather?.visibility_m;
+        return visibilityM != null ? visibilityM / 1000 : Infinity;
+      }))
+    : Infinity;
+  const weatherImpacts = [];
+  if (maxRainChance >= 75) weatherImpacts.push({ label: "Heavy Rain Risk", tone: "sky" });
+  if (maxWindGust >= 45) weatherImpacts.push({ label: "High Winds", tone: "sky" });
+  if (Number.isFinite(minVisibilityKm) && minVisibilityKm <= 4) weatherImpacts.push({ label: "Low Visibility", tone: "sky" });
+
   return (
     <div
       onClick={onSelect}
@@ -451,6 +469,20 @@ export default function RouteCard({
             </div>
           );
         })()}
+
+      {weatherImpacts.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          {weatherImpacts.map((impact) => (
+            <span
+              key={impact.label}
+              className="inline-flex items-center gap-1 rounded-full border border-sky-800/70 bg-sky-950/40 px-2 py-1 text-[10px] font-mono font-semibold text-sky-300"
+            >
+              <AlertTriangle className="h-3 w-3 text-sky-400" />
+              {impact.label}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center justify-between pt-1">
         <span className="text-xs text-slate-400">

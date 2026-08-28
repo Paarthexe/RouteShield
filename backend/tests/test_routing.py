@@ -50,7 +50,7 @@ async def test_generate_candidate_routes_success():
         assert len(routes[0].samples) >= 2
 
         assert routes[1].route_id == "route_2"
-        assert routes[1].tag == "Alternative Evacuation Corridor 1"
+        assert routes[1].tag == "Alternative Evacuation Corridor 2"
 
 @pytest.mark.asyncio
 async def test_generate_candidate_routes_no_routes():

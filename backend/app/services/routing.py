@@ -55,7 +55,8 @@ class RoutingService:
                 route_id=route_id,
                 geometry=geometry,
                 interval_m=interval,
-                disaster_type=disaster_type
+                disaster_type=disaster_type,
+                estimated_duration_s=dur_s,
             )
             infra_data = infrastructure_service.project_stations_for_route(regional_stations, coords, dist_m)
 

@@ -21,7 +21,8 @@ class SamplingService:
         route_id: str,
         geometry: GeoJSONLineString,
         interval_m: float = 500.0,
-        disaster_type: str = "ALL_HAZARDS"
+        disaster_type: str = "ALL_HAZARDS",
+        estimated_duration_s: Optional[float] = None,
     ) -> List[RouteSample]:
         coords = geometry.coordinates
         if not coords:
@@ -32,8 +33,10 @@ class SamplingService:
             lon, lat = coords[0]
             m_facts = await mireye_data_service.fetch_location_facts(lat, lon, preset="natural_hazard")
             om_elevs = await open_meteo_service.fetch_elevations_bulk([(lat, lon)])
+            om_weather = await open_meteo_service.fetch_weather_bulk([(lat, lon)], hour_offsets=[0])
             rt_alerts = await traffic_service.fetch_point_alerts(lat, lon)
             om_data = om_elevs[0] if om_elevs else None
+            weather_data = om_weather[0] if om_weather else None
             
             combined_facts = m_facts if isinstance(m_facts, dict) else {}
             if om_data and "elevation_m" in om_data:
@@ -50,6 +53,7 @@ class SamplingService:
                     distance_from_origin_m=0.0,
                     nbi_bridges=nbi_service.get_nearby_bridges(lat, lon, radius_m=300.0),
                     mireye_data=combined_facts if combined_facts else None,
+                    weather=weather_data if weather_data else None,
                     realtime_hazards=rt_alerts if rt_alerts else None,
                     is_mireye_probed=True
                 )
@@ -86,9 +90,19 @@ class SamplingService:
         # PHASE 2: Bulk Open-Meteo Elevation
         # ====================================================================
         point_coords = [(lat, lon) for (lat, lon, _) in point_targets]
+        weather_hour_offsets = []
+        for _, _, dist_m in point_targets:
+            if estimated_duration_s and total_distance > 0:
+                eta_s = (dist_m / total_distance) * estimated_duration_s
+                weather_hour_offsets.append(int(eta_s // 3600))
+            else:
+                weather_hour_offsets.append(0)
         om_results = await open_meteo_service.fetch_elevations_bulk(point_coords)
+        weather_results = await open_meteo_service.fetch_weather_bulk(point_coords, hour_offsets=weather_hour_offsets)
         if not isinstance(om_results, list):
             om_results = []
+        if not isinstance(weather_results, list):
+            weather_results = []
 
         # ====================================================================
         # PHASE 3: NBI bridge lookup for ALL points (local SQLite, instant)
@@ -193,6 +207,7 @@ class SamplingService:
         for idx, (lat, lon, dist_m) in enumerate(point_targets):
             sample_id = f"{route_id}_sample_{idx + 1:03d}"
             om_data = om_results[idx] if idx < len(om_results) and isinstance(om_results[idx], dict) else None
+            weather_data = weather_results[idx] if idx < len(weather_results) and isinstance(weather_results[idx], dict) else None
             rt_alerts = traffic_alerts_res[idx] if idx < len(traffic_alerts_res) and isinstance(traffic_alerts_res[idx], list) else []
 
             is_probed = idx in critical_indices
@@ -221,6 +236,7 @@ class SamplingService:
                     distance_from_origin_m=dist_m,
                     nbi_bridges=nbi_results[idx] if nbi_results[idx] else None,
                     mireye_data=facts if facts else None,
+                    weather=weather_data if weather_data else None,
                     realtime_hazards=rt_alerts if rt_alerts else None,
                     traffic_flow=tt_flow if tt_flow else None,
                     slope_pct=slopes[idx],

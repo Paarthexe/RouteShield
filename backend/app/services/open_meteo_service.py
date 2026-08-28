@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import httpx
 from typing import List, Dict, Any, Tuple, Optional
 from app.config import settings
@@ -12,6 +13,7 @@ BATCH_SIZE = 80  # Open-Meteo limit is 100 points per request
 class OpenMeteoService:
     def __init__(self):
         self.base_url = "https://api.open-meteo.com/v1/elevation"
+        self.forecast_url = "https://api.open-meteo.com/v1/forecast"
         self.timeout = settings.HTTP_TIMEOUT_S
 
     async def fetch_elevations_bulk(
@@ -78,6 +80,85 @@ class OpenMeteoService:
                         logger.warning(f"Open-Meteo API returned status {resp.status_code}: {resp.text[:150]}")
             except Exception as e:
                 logger.warning(f"Open-Meteo API request failed: {e}")
+
+        return results
+
+    async def fetch_weather_bulk(
+        self,
+        points: List[Tuple[float, float]],
+        hour_offsets: Optional[List[int]] = None,
+    ) -> List[Optional[Dict[str, Any]]]:
+        """
+        Fetch current weather / near-term operational weather for a list of points.
+        Returns weather descriptors aligned to the input coordinate order.
+        """
+        if not points:
+            return []
+
+        if hour_offsets is None:
+            hour_offsets = [0] * len(points)
+
+        results: List[Optional[Dict[str, Any]]] = [None] * len(points)
+
+        async def fetch_single(idx: int, lat: float, lon: float, hour_offset: int):
+            bounded_hour_offset = max(0, min(23, int(hour_offset)))
+            cache_key = f"open_meteo:weather:{round(lat, 3)},{round(lon, 3)}:{bounded_hour_offset}"
+            cached = cache_service.get(cache_key)
+            if cached:
+                results[idx] = cached
+                return
+
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "current": "temperature_2m,precipitation,rain,showers,snowfall,wind_speed_10m,wind_gusts_10m,weather_code",
+                "hourly": "precipitation_probability,visibility,relative_humidity_2m",
+                "forecast_days": 1,
+                "timezone": "auto",
+            }
+
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    resp = await client.get(self.forecast_url, params=params)
+                    if resp.status_code != 200:
+                        logger.warning(f"Open-Meteo weather API returned status {resp.status_code}: {resp.text[:150]}")
+                        return
+
+                    data = resp.json()
+                    current = data.get("current", {}) or {}
+                    hourly = data.get("hourly", {}) or {}
+                    precip_probs = hourly.get("precipitation_probability") or []
+                    visibilities = hourly.get("visibility") or []
+                    humidities = hourly.get("relative_humidity_2m") or []
+
+                    precip_prob = precip_probs[bounded_hour_offset] if bounded_hour_offset < len(precip_probs) else (precip_probs[0] if precip_probs else None)
+                    visibility = visibilities[bounded_hour_offset] if bounded_hour_offset < len(visibilities) else (visibilities[0] if visibilities else None)
+                    humidity = humidities[bounded_hour_offset] if bounded_hour_offset < len(humidities) else (humidities[0] if humidities else None)
+
+                    item = {
+                        "temperature_c": current.get("temperature_2m"),
+                        "precipitation_mm": current.get("precipitation"),
+                        "rain_mm": current.get("rain"),
+                        "showers_mm": current.get("showers"),
+                        "snowfall_cm": current.get("snowfall"),
+                        "wind_speed_kmh": current.get("wind_speed_10m"),
+                        "wind_gust_kmh": current.get("wind_gusts_10m"),
+                        "weather_code": current.get("weather_code"),
+                        "precipitation_probability_pct": precip_prob,
+                        "visibility_m": visibility,
+                        "relative_humidity_pct": humidity,
+                        "forecast_hour_offset": bounded_hour_offset,
+                        "weather_source": "Open-Meteo Forecast (ETA-aligned)",
+                    }
+                    results[idx] = item
+                    cache_service.set(cache_key, item)
+            except Exception as e:
+                logger.warning(f"Open-Meteo weather API request failed: {e}")
+
+        await asyncio.gather(*[
+            fetch_single(idx, lat, lon, hour_offsets[idx] if idx < len(hour_offsets) else 0)
+            for idx, (lat, lon) in enumerate(points)
+        ])
 
         return results
 

@@ -747,6 +747,33 @@ export default function MapView({
             const isMireyeProbed = sample.is_mireye_probed;
             const hazardScore = sample.hazard_score || 0;
             const distKm = (sample.distance_from_origin_m / 1000.0).toFixed(2);
+            const weather = sample.weather;
+            const pointHighlights = [];
+            if (hazardScore > 0.5) pointHighlights.push({ label: "High Risk", tone: "rose" });
+            else if (hazardScore > 0.3) pointHighlights.push({ label: "Moderate Risk", tone: "amber" });
+            else if (hazardScore > 0.1) pointHighlights.push({ label: "Low Risk", tone: "emerald" });
+            if (sample.slope_pct != null && Math.abs(sample.slope_pct) > 8) {
+              pointHighlights.push({ label: "Steep Grade", tone: "amber" });
+            }
+            if (sample.nbi_bridges?.length) {
+              pointHighlights.push({ label: `${sample.nbi_bridges.length} Bridge${sample.nbi_bridges.length > 1 ? "s" : ""} Nearby`, tone: "amber" });
+            }
+            if (weather?.precipitation_probability_pct >= 75) {
+              pointHighlights.push({ label: "Heavy Rain Risk", tone: "sky" });
+            }
+            if ((weather?.wind_gust_kmh ?? 0) >= 45) {
+              pointHighlights.push({ label: "High Winds", tone: "sky" });
+            }
+            if (weather?.visibility_m != null && weather.visibility_m < 4000) {
+              pointHighlights.push({ label: "Low Visibility", tone: "sky" });
+            }
+
+            const toneClasses = {
+              rose: "bg-rose-950/50 text-rose-300 border-rose-800/70",
+              amber: "bg-amber-950/40 text-amber-300 border-amber-800/60",
+              emerald: "bg-emerald-950/40 text-emerald-300 border-emerald-800/60",
+              sky: "bg-sky-950/40 text-sky-300 border-sky-800/60",
+            };
 
             // Subtle color coding by hazard score
             let fillColor = "#06b6d4"; // Default cyan
@@ -758,7 +785,7 @@ export default function MapView({
 
             const popupContent = (
               <Popup>
-                <div className="p-1 space-y-1.5 font-sans text-xs">
+                <div className="p-1 space-y-2 font-sans text-xs min-w-[250px] max-w-[280px]">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[10px] font-bold text-cyan-400 font-mono block">
                       {sample.sample_id}
@@ -772,6 +799,18 @@ export default function MapView({
                   <div className="font-bold text-slate-100 font-mono text-[11px]">
                     Distance: <span className="text-cyan-300">{distKm} km</span>
                   </div>
+                  {pointHighlights.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {pointHighlights.map((item) => (
+                        <span
+                          key={item.label}
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-mono font-semibold ${toneClasses[item.tone]}`}
+                        >
+                          {item.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {hazardScore > 0 && (
                     <div className="text-[10px] text-slate-300 font-mono">
                       Hazard Score:{" "}
@@ -801,8 +840,13 @@ export default function MapView({
                     </div>
                   )}
                   {sample.nbi_bridges && sample.nbi_bridges.length > 0 && (
-                    <div className="text-[10px] text-amber-300 font-mono">
-                      Bridges nearby: {sample.nbi_bridges.length}
+                    <div className="text-[10px] text-amber-300 font-mono border-t border-slate-800 pt-1 space-y-0.5">
+                      <div>Bridges nearby: {sample.nbi_bridges.length}</div>
+                      {sample.nbi_bridges.slice(0, 2).map((bridge, idx) => (
+                        <div key={bridge.structure_id || idx} className="text-slate-400">
+                          {bridge.structure_id || "Bridge"} · {bridge.condition_label || bridge.location || "NBI evidence"}
+                        </div>
+                      ))}
                     </div>
                   )}
                   {sample.traffic_flow && (
@@ -811,6 +855,41 @@ export default function MapView({
                         Speed: {sample.traffic_flow.current_speed_kmh} km/h (
                         {sample.traffic_flow.congestion_condition})
                       </span>
+                    </div>
+                  )}
+                  {weather && (
+                    <div className="text-[10px] text-sky-300 font-mono mt-1 border-t border-slate-800 pt-1 space-y-0.5">
+                      {weather.weather_source && (
+                        <div className="text-slate-400">{weather.weather_source}</div>
+                      )}
+                      {weather.precipitation_probability_pct != null && (
+                        <div>Rain Chance: {weather.precipitation_probability_pct}%</div>
+                      )}
+                      {weather.wind_speed_kmh != null && (
+                        <div>Wind: {weather.wind_speed_kmh} km/h</div>
+                      )}
+                      {weather.wind_gust_kmh != null && (
+                        <div>Wind Gust: {weather.wind_gust_kmh} km/h</div>
+                      )}
+                      {weather.visibility_m != null && (
+                        <div>Visibility: {Math.round(weather.visibility_m / 1000)} km</div>
+                      )}
+                    </div>
+                  )}
+                  {sample.mireye_data && (
+                    <div className="text-[10px] text-slate-300 font-mono mt-1 border-t border-slate-800 pt-1 space-y-0.5">
+                      {sample.mireye_data.seismic_pga_g !== undefined && (
+                        <div>PGA: {sample.mireye_data.seismic_pga_g.toFixed(2)}g</div>
+                      )}
+                      {sample.mireye_data.fire_hazard_zone && (
+                        <div>Fire Zone: {sample.mireye_data.fire_hazard_zone}</div>
+                      )}
+                      {(sample.mireye_data.fema_flood_zone || sample.mireye_data.within_floodplain) && (
+                        <div>Flood: {sample.mireye_data.fema_flood_zone ? `Zone ${sample.mireye_data.fema_flood_zone}` : "Floodplain"}</div>
+                      )}
+                      {sample.mireye_data.landslide_susceptibility !== undefined && (
+                        <div>Landslide: {sample.mireye_data.landslide_susceptibility}/100</div>
+                      )}
                     </div>
                   )}
                 </div>

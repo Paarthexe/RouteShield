@@ -8,10 +8,13 @@ logger = logging.getLogger(__name__)
 W_HAZARD_EXPOSURE = 40.0
 W_BOTTLENECK_PENALTY = 25.0
 W_TIME_DELTA = 35.0
+ISOLATED_CATASTROPHIC_BOTTLENECK_SCORE_PENALTY = 18.0
 
 # Rejection thresholds
 REJECT_BSI_THRESHOLD = 3.5          # Catastrophic bottleneck threshold
 REJECT_HAZARD_EXPOSURE_PCT = 0.45   # > 45% of samples with hazard_score > 0.5 = auto-reject
+ISOLATED_CRITICAL_BOTTLENECK_LIMIT = 1
+ISOLATED_CRITICAL_HAZARD_EXPOSURE_PCT = 0.20
 
 
 def risk_model_metadata() -> dict:
@@ -22,12 +25,15 @@ def risk_model_metadata() -> dict:
             "hazard_exposure_weight": W_HAZARD_EXPOSURE,
             "bottleneck_penalty_weight": W_BOTTLENECK_PENALTY,
             "travel_time_penalty_weight": W_TIME_DELTA,
+            "isolated_catastrophic_bottleneck_penalty": ISOLATED_CATASTROPHIC_BOTTLENECK_SCORE_PENALTY,
         },
         "viability_gate": {
             "catastrophic_bottleneck_bsi": REJECT_BSI_THRESHOLD,
             "high_hazard_exposure_pct": REJECT_HAZARD_EXPOSURE_PCT * 100,
+            "isolated_critical_bottleneck_limit": ISOLATED_CRITICAL_BOTTLENECK_LIMIT,
+            "isolated_critical_hazard_exposure_pct": ISOLATED_CRITICAL_HAZARD_EXPOSURE_PCT * 100,
         },
-        "interpretation": "Scores rank routes only after the explicit viability gate rejects critical corridors.",
+        "interpretation": "Scores rank routes after the viability gate. Isolated catastrophic bottlenecks are penalized heavily, but only reject a corridor when corroborated by closures or broader severe exposure.",
     }
 
 
@@ -81,26 +87,39 @@ def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViab
         W_TIME_DELTA * time_delta_penalty +
         infra_penalty
     )
-    score = round(max(0.0, min(100.0, score)), 1)
 
     # --- Rejection Rules ---
     rejection_reasons: List[str] = []
 
-    if max_bsi > REJECT_BSI_THRESHOLD:
-        rejection_reasons.append(
-            f"Contains catastrophic bottleneck (BSI {max_bsi:.2f} > {REJECT_BSI_THRESHOLD})"
-        )
-
     high_hazard_count = sum(1 for s in samples if (s.hazard_score or 0) > 0.5)
     high_hazard_pct = high_hazard_count / total_samples
-    if high_hazard_pct > REJECT_HAZARD_EXPOSURE_PCT:
+    has_broad_high_hazard_exposure = high_hazard_pct > REJECT_HAZARD_EXPOSURE_PCT
+    if has_broad_high_hazard_exposure:
         rejection_reasons.append(
             f"Excessive hazard exposure ({high_hazard_pct:.0%} of corridor above threshold)"
         )
 
     # Check for active road closures
-    if any(s.traffic_flow and s.traffic_flow.get("road_closed") for s in samples):
+    has_road_closure = any(s.traffic_flow and s.traffic_flow.get("road_closed") for s in samples)
+    if has_road_closure:
         rejection_reasons.append("Active road closure reported along corridor")
+
+    catastrophic_bottlenecks = [b for b in bottlenecks if b.bsi_score > REJECT_BSI_THRESHOLD]
+    has_isolated_catastrophic_bottleneck = (
+        len(catastrophic_bottlenecks) <= ISOLATED_CRITICAL_BOTTLENECK_LIMIT
+        and high_hazard_pct <= ISOLATED_CRITICAL_HAZARD_EXPOSURE_PCT
+        and not has_road_closure
+    )
+
+    if catastrophic_bottlenecks and not has_isolated_catastrophic_bottleneck:
+        rejection_reasons.append(
+            f"Contains catastrophic bottleneck (BSI {max_bsi:.2f} > {REJECT_BSI_THRESHOLD})"
+        )
+
+    if catastrophic_bottlenecks and has_isolated_catastrophic_bottleneck:
+        score -= ISOLATED_CATASTROPHIC_BOTTLENECK_SCORE_PENALTY
+
+    score = round(max(0.0, min(100.0, score)), 1)
 
     status = "REJECTED" if rejection_reasons else "CANDIDATE"
 

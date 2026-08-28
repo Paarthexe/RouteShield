@@ -109,6 +109,7 @@ def _hazard_risk(sample: RouteSample, disaster_type: str = "ALL_HAZARDS") -> flo
     """
     risk = 0.0
     mireye = sample.mireye_data or {}
+    weather = sample.weather or {}
     bridges = sample.nbi_bridges or []
 
     # Extract base environmental facts
@@ -127,6 +128,11 @@ def _hazard_risk(sample: RouteSample, disaster_type: str = "ALL_HAZARDS") -> flo
     dam_hazard = mireye.get("nearest_dam_hazard")
     ls = mireye.get("landslide_susceptibility") or 0
     elev = mireye.get("elevation_m")
+    precip_prob = weather.get("precipitation_probability_pct") or 0
+    wind_speed_kmh = weather.get("wind_speed_kmh") or 0
+    wind_gust_kmh = weather.get("wind_gust_kmh") or 0
+    visibility_m = weather.get("visibility_m")
+    humidity_pct = weather.get("relative_humidity_pct")
 
     slope = sample.slope_pct
     if slope is None:
@@ -179,6 +185,12 @@ def _hazard_risk(sample: RouteSample, disaster_type: str = "ALL_HAZARDS") -> flo
         wind_mph = mireye.get("wind_speed_mph")
         if wind_mph and wind_mph >= 130:
             risk += 0.12
+        if wind_gust_kmh >= 45:
+            risk += 0.18
+        elif wind_speed_kmh >= 30:
+            risk += 0.10
+        if humidity_pct is not None and humidity_pct <= 25:
+            risk += 0.10
 
         # CASCADING DISASTER: Post-Wildfire Debris Flow & Rockfall
         # If the area has wildfire/burn exposure AND steep slopes, soil hydrophobicity triggers mudslides!
@@ -211,6 +223,10 @@ def _hazard_risk(sample: RouteSample, disaster_type: str = "ALL_HAZARDS") -> flo
 
         if mireye.get("intersects_nhd_area") is True:
             risk += 0.20
+        if precip_prob >= 80:
+            risk += 0.20
+        elif precip_prob >= 60:
+            risk += 0.10
 
         swp = mireye.get("surface_water_permanence_pct")
         if swp is not None and swp >= 75:
@@ -228,6 +244,8 @@ def _hazard_risk(sample: RouteSample, disaster_type: str = "ALL_HAZARDS") -> flo
         # Heavy rain mudslide cascade in floodplains with steep canyon walls
         if has_flood_risk and abs_slope > 12.0:
             risk += 0.20
+        if visibility_m is not None and visibility_m < 4000:
+            risk += 0.08
 
     # -------------------------------------------------------------
     # 3. EARTHQUAKE PROTOCOL & CASCADES
@@ -250,6 +268,8 @@ def _hazard_risk(sample: RouteSample, disaster_type: str = "ALL_HAZARDS") -> flo
 
         if has_seismic_risk and dam_hazard == "High" and dam_dist and dam_dist < 3000.0:
             risk += 0.30  # Co-seismic dam structural failure
+        if visibility_m is not None and visibility_m < 3000:
+            risk += 0.05
 
     # -------------------------------------------------------------
     # 4. LANDSLIDE PROTOCOL & CASCADES
@@ -272,6 +292,10 @@ def _hazard_risk(sample: RouteSample, disaster_type: str = "ALL_HAZARDS") -> flo
         # Saturated slope cascade (near river channel or floodplain)
         if (has_flood_risk or mireye.get("intersects_nhd_area")) and abs_slope > 8.0:
             risk += 0.25  # Water-saturated debris flow
+        if precip_prob >= 75:
+            risk += 0.22
+        elif precip_prob >= 50:
+            risk += 0.12
 
         # Post-fire scar slope failure cascade
         if has_fire_risk and abs_slope > 8.0:
@@ -301,6 +325,12 @@ def _hazard_risk(sample: RouteSample, disaster_type: str = "ALL_HAZARDS") -> flo
             risk += 0.15
         if dam_hazard == "High" and dam_dist and dam_dist < 2000.0:
             risk += 0.15
+        if precip_prob >= 70:
+            risk += 0.12
+        if wind_gust_kmh >= 50:
+            risk += 0.08
+        if visibility_m is not None and visibility_m < 3000:
+            risk += 0.10
 
     return min(risk, 1.0)
 

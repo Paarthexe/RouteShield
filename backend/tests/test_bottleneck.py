@@ -96,3 +96,51 @@ def test_landslide_disaster_weighting():
     risk_all = _hazard_risk(sample, disaster_type="ALL_HAZARDS")
 
     assert risk_ls > risk_all
+
+
+def test_weather_amplifies_landslide_risk():
+    dry = RouteSample(
+        sample_id="dry_ls",
+        route_id="route_1",
+        latitude=35.5,
+        longitude=-82.5,
+        distance_from_origin_m=4000.0,
+        slope_pct=14.0,
+        mireye_data={"landslide_susceptibility": 55},
+        weather={"precipitation_probability_pct": 20},
+    )
+    wet = RouteSample(
+        sample_id="wet_ls",
+        route_id="route_1",
+        latitude=35.5,
+        longitude=-82.5,
+        distance_from_origin_m=4000.0,
+        slope_pct=14.0,
+        mireye_data={"landslide_susceptibility": 55},
+        weather={"precipitation_probability_pct": 85},
+    )
+
+    assert _hazard_risk(wet, disaster_type="LANDSLIDE") > _hazard_risk(dry, disaster_type="LANDSLIDE")
+
+
+def test_weather_amplifies_wildfire_risk():
+    calm = RouteSample(
+        sample_id="calm_wf",
+        route_id="route_1",
+        latitude=39.75,
+        longitude=-121.62,
+        distance_from_origin_m=1000.0,
+        mireye_data={"fire_hazard_zone": "High", "nearest_fire_perimeter_m": 500.0},
+        weather={"wind_speed_kmh": 12, "wind_gust_kmh": 18, "relative_humidity_pct": 40},
+    )
+    windy = RouteSample(
+        sample_id="windy_wf",
+        route_id="route_1",
+        latitude=39.75,
+        longitude=-121.62,
+        distance_from_origin_m=1000.0,
+        mireye_data={"fire_hazard_zone": "High", "nearest_fire_perimeter_m": 500.0},
+        weather={"wind_speed_kmh": 34, "wind_gust_kmh": 52, "relative_humidity_pct": 18},
+    )
+
+    assert _hazard_risk(windy, disaster_type="WILDFIRE") > _hazard_risk(calm, disaster_type="WILDFIRE")
