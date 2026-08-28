@@ -1,7 +1,7 @@
 import React from 'react';
-import { Shield, Activity, Database, GitBranch } from 'lucide-react';
+import { Shield, Activity, Database, GitBranch, Info } from 'lucide-react';
 
-export default function Header() {
+export default function Header({ onOpenAgentTools }) {
   return (
     <header className="h-14 border-b border-zinc-800/80 bg-zinc-950/90 px-5 flex items-center justify-between sticky top-0 z-30 backdrop-blur-md">
       <div className="flex items-center space-x-3">
@@ -33,6 +33,15 @@ export default function Header() {
           <span className="text-zinc-300">Open-Meteo Weather & DEM</span>
         </div>
 
+        {/* Agent Tools Button */}
+        <button
+          onClick={onOpenAgentTools}
+          title="View Agent Tools & Architecture"
+          className="flex items-center gap-1.5 bg-sky-950/60 border border-sky-800/60 px-2.5 py-1 rounded text-[11px] font-mono text-sky-400 hover:bg-sky-950 hover:text-sky-300 transition-colors cursor-pointer"
+        >
+          <Info className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Agent Tools</span>
+        </button>
 
         <div className="flex items-center space-x-1.5 bg-emerald-950/60 border border-emerald-800/50 px-2 py-1 rounded text-[11px] font-mono text-emerald-400">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>

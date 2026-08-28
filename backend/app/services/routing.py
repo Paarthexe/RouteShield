@@ -8,6 +8,7 @@ from app.models.route_models import Coordinate, Route, GeoJSONLineString, AgentD
 from app.services.sampling import sampling_service
 from app.services.cache import cache_service
 from app.services.agent_service import run_agent_analysis
+from app.services.segmentation_service import segmentation_service
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class RoutingService:
             coords = r_data.get("geometry", {}).get("coordinates", [])
 
             geometry = GeoJSONLineString(type="LineString", coordinates=coords)
-            tag = "Fastest Evacuation Corridor" if idx == 0 else f"Alternative Evacuation Corridor {idx}"
+            tag = "Fastest Travel-Time Baseline" if idx == 0 else f"Alternative Corridor {idx}"
 
             samples = await sampling_service.sample_route(
                 route_id=route_id,
@@ -68,7 +69,7 @@ class RoutingService:
             valid_ages = [b["age_years"] for b in bridge_list if b.get("age_years") is not None]
             avg_age = round(sum(valid_ages) / len(valid_ages), 1) if valid_ages else 0
 
-            return Route(
+            route_obj = Route(
                 route_id=route_id,
                 geometry=geometry,
                 distance_m=round(dist_m, 1),
@@ -87,6 +88,11 @@ class RoutingService:
                     ]
                 }
             )
+
+            # Generate logical corridor segments
+            route_obj.segments = segmentation_service.segment_route(route_obj)
+            return route_obj
+
 
         # Sample all candidate routes concurrently
         route_tasks = [_process_single_route(idx, r_data) for idx, r_data in enumerate(raw_routes)]

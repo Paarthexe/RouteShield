@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
-import { MapPin, Navigation, Compass, CheckCircle2 } from 'lucide-react';
+import { MapPin, Navigation, Compass, CheckCircle2, XCircle } from 'lucide-react';
 
 const ROUTE_LINE_COLORS = {
   route_1: '#06b6d4', // Cyan
@@ -122,7 +122,7 @@ function MapBoundsAdjuster({ bounds }) {
 }
 
 // Map Click Event Handler & Location Picker Component
-function MapClickHandler({ onSetOrigin, onSetDestination, onSetWaypoint, pickerMode, setPickerMode }) {
+function MapClickHandler({ onSetOrigin, onSetDestination, onSetWaypoint, pickerMode, setPickerMode, onAvoidPointPicked }) {
   useMapEvents({
     click(e) {
       const { lat, lng } = e.latlng;
@@ -138,12 +138,33 @@ function MapClickHandler({ onSetOrigin, onSetDestination, onSetWaypoint, pickerM
           onSetWaypoint(idx, lat, lng);
         }
         setPickerMode(null);
+      } else if (pickerMode === 'avoid_point') {
+        if (onAvoidPointPicked) onAvoidPointPicked(lat, lng);
+        setPickerMode(null);
       }
     }
   });
 
   return null;
 }
+
+// Avoid-point marker icon — red crosshair
+const createAvoidIcon = () => L.divIcon({
+  className: 'avoid-point-marker',
+  html: `
+    <div style="
+      width: 28px; height: 28px;
+      background: rgba(239,68,68,0.18);
+      border: 2.5px solid #ef4444;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 14px #ef444480;
+    ">
+      <div style="font-size:14px;font-weight:900;color:#ef4444;line-height:1">✕</div>
+    </div>`,
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+});
 
 const parseCoordStr = (val) => {
   if (!val) return null;
@@ -179,7 +200,11 @@ export default function MapView({
   resolvedDestination,
   resolvedWaypoints = [],
   pickerMode,
-  setPickerMode
+  setPickerMode,
+  avoidPointMarker = null,
+  onAvoidPointPicked,
+  repairedGeometry = null,
+  originalGeometry = null,
 }) {
   const originObj = parseCoordStr(origin) || resolvedOrigin || parseCoordStr(rawOriginStr);
   const destinationObj = parseCoordStr(destination) || resolvedDestination || parseCoordStr(rawDestinationStr);
@@ -236,6 +261,8 @@ export default function MapView({
           maxZoom={19}
         />
 
+
+
         <MapBoundsAdjuster bounds={mapBounds.length > 0 ? mapBounds : null} />
 
         {/* Map Click Picker Handler */}
@@ -245,7 +272,51 @@ export default function MapView({
           onSetWaypoint={onSetWaypoint}
           pickerMode={pickerMode}
           setPickerMode={setPickerMode}
+          onAvoidPointPicked={onAvoidPointPicked}
         />
+
+        {/* Original geometry (faded) shown during avoid-point repair diff */}
+        {originalGeometry && repairedGeometry && (
+          <Polyline
+            positions={originalGeometry.coordinates.map(([lon, lat]) => [lat, lon])}
+            pathOptions={{
+              color: '#6b7280',
+              weight: 4,
+              opacity: 0.45,
+              dashArray: '6, 8',
+            }}
+          />
+        )}
+
+        {/* Repaired geometry overlay — highlighted green diff */}
+        {repairedGeometry && (
+          <Polyline
+            positions={repairedGeometry.coordinates.map(([lon, lat]) => [lat, lon])}
+            pathOptions={{
+              color: '#22c55e',
+              weight: 5,
+              opacity: 0.9,
+              dashArray: null,
+            }}
+          />
+        )}
+
+        {/* Avoid-point marker */}
+        {avoidPointMarker && (
+          <Marker
+            position={[avoidPointMarker.lat, avoidPointMarker.lng]}
+            icon={createAvoidIcon()}
+          >
+            <Popup>
+              <div className="p-1 space-y-1 font-sans">
+                <span className="text-[10px] font-bold uppercase text-rose-400 font-mono block">Avoided Point</span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {avoidPointMarker.lat.toFixed(5)}, {avoidPointMarker.lng.toFixed(5)}
+                </span>
+              </div>
+            </Popup>
+          </Marker>
+        )}
 
         {/* Dashed Preview Line between Origin -> Waypoints -> Destination before route generation */}
         {previewPositions.length >= 2 && (!routes || routes.length === 0) && (
@@ -515,6 +586,34 @@ export default function MapView({
         })()}
 
       </MapContainer>
+
+      {/* Avoid-point picker active banner */}
+      {pickerMode === 'avoid_point' && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-950/90 border border-rose-700 shadow-xl text-[12px] font-bold font-mono text-rose-300">
+          <span className="h-2 w-2 rounded-full bg-rose-400 animate-ping" />
+          Click anywhere on the route to mark it as blocked
+          <button
+            onClick={() => setPickerMode(null)}
+            className="ml-2 text-rose-400 hover:text-rose-200 cursor-pointer"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Repair diff legend */}
+      {repairedGeometry && (
+        <div className="absolute top-3 right-3 z-30 flex items-center gap-3 px-3 py-2 rounded-xl bg-zinc-950/90 border border-zinc-700 text-[11px] font-mono shadow-xl">
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-5 rounded bg-gray-500 opacity-50" />
+            <span className="text-zinc-400">Original</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-5 rounded bg-green-500" />
+            <span className="text-green-400">Repaired</span>
+          </div>
+        </div>
+      )}
 
       {/* Legend & Controls Overlay - ONLY SHOWN IF ROUTES ARE PRESENT */}
       {routes && routes.length > 0 && (

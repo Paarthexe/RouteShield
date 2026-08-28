@@ -67,3 +67,78 @@ def test_shared_bridge_disqualifies_backup_independence():
 
     assert assessment.shared_bridge_ids == ["NBI-123"]
     assert assessment.is_independent is False
+
+
+def test_route_with_over_60_pct_severe_hazards_is_rejected():
+    # 10 samples, 7 have hazard_score = 0.8 (>0.5 threshold) => 70% severe hazard
+    points = [(0.0, index * 0.01) for index in range(10)]
+    route = make_route("route_severe_hazard", points)
+    for i, s in enumerate(route.samples):
+        s.hazard_score = 0.8 if i < 7 else 0.1
+    
+    viability = assess_route_viability(route, fastest_duration_s=600)
+    assert viability.status == "REJECTED"
+    assert any("Excessive severe hazard exposure" in reason for reason in viability.rejection_reasons)
+
+
+def test_route_with_critical_bottlenecks_density_is_rejected():
+    from app.models.route_models import BottleneckInfo
+    points = [(0.0, index * 0.01) for index in range(10)]
+    route = make_route("route_critical_bns", points)
+    # 5 out of 10 samples are critical bottlenecks (50% >= 35% gate)
+    bottlenecks = [
+        BottleneckInfo(
+            sample_id=f"route_critical_bns_{i}",
+            latitude=0.0,
+            longitude=i * 0.01,
+            distance_from_origin_m=i * 500,
+            bsi_score=0.85,
+            hazard_risk=0.55,
+            bridge_vulnerability=0.4,
+            terrain_penalty=1.0,
+            severity_label="Critical",
+            description="Severe chokepoint"
+        )
+        for i in range(5)
+    ]
+    route.bottlenecks = bottlenecks
+    viability = assess_route_viability(route, fastest_duration_s=600)
+    assert viability.status == "REJECTED"
+    assert any("Excessive critical bottleneck density" in reason for reason in viability.rejection_reasons)
+
+
+def test_route_with_catastrophic_bsi_is_rejected():
+    from app.models.route_models import BottleneckInfo
+    points = [(0.0, index * 0.01) for index in range(10)]
+    route = make_route("route_catastrophic", points)
+    route.bottlenecks = [
+        BottleneckInfo(
+            sample_id="route_catastrophic_0",
+            latitude=0.0,
+            longitude=0.0,
+            distance_from_origin_m=0,
+            bsi_score=2.2,  # >= 2.0 catastrophic threshold
+            hazard_risk=0.8,
+            bridge_vulnerability=1.8,
+            terrain_penalty=1.0,
+            severity_label="Critical",
+            description="Bridge collapse risk"
+        )
+    ]
+    viability = assess_route_viability(route, fastest_duration_s=600)
+    assert viability.status == "REJECTED"
+    assert any("Contains catastrophic bottleneck" in reason for reason in viability.rejection_reasons)
+
+
+def test_trade_off_copy_acknowledges_bottlenecks_on_fastest_route():
+    from app.services.agent_service import _generate_trade_off
+    points = [(0.0, index * 0.01) for index in range(5)]
+    primary = make_route("route_1", points, duration_s=600)
+    assess_route_viability(primary, fastest_duration_s=600)
+    primary.viability.critical_bottleneck_count = 3
+    primary.viability.hazard_exposure_pct = 45.0
+
+    copy = _generate_trade_off([primary], primary, None, [], fastest_duration_s=600)
+    assert "No speed-safety trade-off is required" not in copy
+    assert "3 critical bottleneck(s)" in copy
+

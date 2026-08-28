@@ -8,10 +8,13 @@ import ErrorNotice from './components/ErrorNotice';
 import AgentBriefing from './components/AgentBriefing';
 import ElevationProfile from './components/ElevationProfile';
 import { analyzeRoutes, resolveLocation } from './services/api';
-import { Eye, EyeOff, Compass, Info } from 'lucide-react';
+import { Eye, EyeOff, Compass, Info, Radio } from 'lucide-react';
 import AnalysisTrace from './components/AnalysisTrace';
 import DecisionReadout from './components/DecisionReadout';
 import RouteComparison from './components/RouteComparison';
+import AgentToolsModal from './components/AgentToolsModal';
+import LiveMonitorHUD from './components/LiveMonitorHUD';
+import SegmentManager from './components/SegmentManager';
 
 export default function App() {
   const [origin, setOrigin] = useState('');
@@ -24,10 +27,18 @@ export default function App() {
   const [selectedRouteId, setSelectedRouteId] = useState('route_1');
   const [showSamples, setShowSamples] = useState(false);
   const [selectedSample, setSelectedSample] = useState(null);
+  const [showAgentTools, setShowAgentTools] = useState(false);
+  const [showLiveMonitor, setShowLiveMonitor] = useState(false);
 
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [pickerMode, setPickerMode] = useState(null);
+
+  // Avoid-point feedback loop state
+  const [avoidPointMarker, setAvoidPointMarker] = useState(null);
+  const [pendingAvoidCallback, setPendingAvoidCallback] = useState(null);
+  const [repairedGeometry, setRepairedGeometry] = useState(null);
+  const [originalGeometry, setOriginalGeometry] = useState(null);
 
   const [resolvedOrigin, setResolvedOrigin] = useState(null);
   const [resolvedDestination, setResolvedDestination] = useState(null);
@@ -113,6 +124,7 @@ export default function App() {
     try {
       const data = await analyzeRoutes(origin, destination, sampleInterval, waypoints, disasterType);
       setAnalysisData(data);
+      setShowLiveMonitor(true);
 
       if (data.agent_decision && data.agent_decision.primary_route_id) {
         setSelectedRouteId(data.agent_decision.primary_route_id);
@@ -135,9 +147,41 @@ export default function App() {
   const selectedRouteObj = analysisData?.routes?.find(r => r.route_id === selectedRouteId);
   const fastestDuration = analysisData?.routes?.[0]?.travel_time_min;
 
+  // When a segment repair succeeds, splice the updated route into analysisData and store diff geometry
+  const handleRouteUpdated = (updatedRoute, diff = null) => {
+    if (!analysisData) return;
+    const oldRoute = analysisData.routes.find(r => r.route_id === updatedRoute.route_id);
+    if (oldRoute && diff) {
+      setOriginalGeometry(oldRoute.geometry);
+      setRepairedGeometry(updatedRoute.geometry);
+    }
+    setAnalysisData(prev => ({
+      ...prev,
+      routes: prev.routes.map(r =>
+        r.route_id === updatedRoute.route_id ? updatedRoute : r
+      ),
+    }));
+  };
+
+  const handleArmAvoidPicker = (segmentId, repairCallback) => {
+    setPickerMode('avoid_point');
+    setPendingAvoidCallback(() => repairCallback);
+  };
+
+  const handleAvoidPointPicked = (lat, lng) => {
+    setAvoidPointMarker({ lat, lng });
+    if (pendingAvoidCallback) {
+      pendingAvoidCallback({ lat, lng });
+      setPendingAvoidCallback(null);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-zinc-950 text-zinc-100 font-sans">
-      <Header />
+      {showAgentTools && (
+        <AgentToolsModal onClose={() => setShowAgentTools(false)} />
+      )}
+      <Header onOpenAgentTools={() => setShowAgentTools(true)} />
 
       <main className="flex-1 w-full max-w-[1720px] mx-auto p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         
@@ -239,6 +283,16 @@ export default function App() {
                     fastestDuration={fastestDuration}
                   />
                 )}
+
+                {/* Segment Manager */}
+                {activeRoute && (
+                  <SegmentManager
+                    route={activeRoute}
+                    disasterType={disasterType}
+                    onRouteUpdated={handleRouteUpdated}
+                    onArmAvoidPicker={handleArmAvoidPicker}
+                  />
+                )}
               </div>
             );
           })()}
@@ -254,6 +308,15 @@ export default function App() {
 
           {analysisData && (
             <DecisionReadout routes={analysisData.routes} selectedRoute={selectedRouteObj} agentDecision={analysisData.agent_decision} />
+          )}
+
+          {/* Live Monitor HUD */}
+          {analysisData && showLiveMonitor && selectedRouteObj && (
+            <LiveMonitorHUD
+              routeId={selectedRouteObj.route_id}
+              disasterType={disasterType}
+              onClose={() => setShowLiveMonitor(false)}
+            />
           )}
           
           {/* Map Toolbar */}
@@ -316,6 +379,10 @@ export default function App() {
               resolvedWaypoints={resolvedWaypoints}
               pickerMode={pickerMode}
               setPickerMode={setPickerMode}
+              avoidPointMarker={avoidPointMarker}
+              onAvoidPointPicked={handleAvoidPointPicked}
+              repairedGeometry={repairedGeometry}
+              originalGeometry={originalGeometry}
             />
           </div>
 

@@ -290,7 +290,13 @@ class NBIService:
             }
         ]
 
+    def is_fallback_mode(self) -> bool:
+        """Check whether NBI is running in synthetic fallback mode or has the real SQLite database."""
+        return not (os.path.exists(self.db_path) and os.path.getsize(self.db_path) > 1024 * 1024)
+
 
 nbi_service = NBIService()
+
+
 
 

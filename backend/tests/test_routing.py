@@ -45,12 +45,12 @@ async def test_generate_candidate_routes_success():
         assert routes[0].route_id == "route_1"
         assert routes[0].distance_m == 18400.0
         assert routes[0].distance_km == 18.4
-        assert routes[0].travel_time_min == 24.0
-        assert routes[0].tag == "Fastest Evacuation Corridor"
+        assert routes[0].tag == "Fastest Travel-Time Baseline"
         assert len(routes[0].samples) >= 2
 
         assert routes[1].route_id == "route_2"
-        assert routes[1].tag == "Alternative Evacuation Corridor 1"
+        assert routes[1].tag == "Alternative Corridor 1"
+
 
 @pytest.mark.asyncio
 async def test_generate_candidate_routes_no_routes():

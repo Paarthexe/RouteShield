@@ -10,14 +10,15 @@ W_BOTTLENECK_PENALTY = 25.0
 W_TIME_DELTA = 10.0
 
 # Rejection thresholds (catastrophic safety gates)
-REJECT_BSI_THRESHOLD = 4.0          # Catastrophic bottleneck threshold
-REJECT_HAZARD_EXPOSURE_PCT = 0.60   # > 60% of corridor under severe hazard = auto-reject
+REJECT_BSI_THRESHOLD = 2.0                   # Catastrophic individual bottleneck threshold
+REJECT_HAZARD_EXPOSURE_PCT = 0.60            # > 60% of corridor under severe hazard (>0.50) = auto-reject
+REJECT_CRITICAL_BOTTLENECK_PCT = 0.35        # >= 35% of corridor samples flagged critical = auto-reject
 
 
 def risk_model_metadata() -> dict:
     """Return the transparent scoring contract sent with every decision."""
     return {
-        "version": "1.0",
+        "version": "1.1",
         "score_formula": {
             "hazard_exposure_weight": W_HAZARD_EXPOSURE,
             "bottleneck_penalty_weight": W_BOTTLENECK_PENALTY,
@@ -26,8 +27,9 @@ def risk_model_metadata() -> dict:
         "viability_gate": {
             "catastrophic_bottleneck_bsi": REJECT_BSI_THRESHOLD,
             "high_hazard_exposure_pct": REJECT_HAZARD_EXPOSURE_PCT * 100,
+            "critical_bottleneck_density_pct": REJECT_CRITICAL_BOTTLENECK_PCT * 100,
         },
-        "interpretation": "Scores rank routes only after the explicit viability gate rejects critical corridors.",
+        "interpretation": "Corridors are screened by hard catastrophic safety gates (individual BSI >= 2.0, critical bottleneck density >= 35%, severe hazard length >= 60%) before comparative score ranking.",
     }
 
 
@@ -40,13 +42,14 @@ def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViab
     total_samples = len(samples) if samples else 1
 
     # --- Hazard Exposure Percentage ---
+    # Aggregate exposure (>0.35)
     hazardous_count = sum(1 for s in samples if (s.hazard_score or 0) > 0.35)
     hazard_exposure_pct = round(hazardous_count / total_samples, 3)
-
 
     # --- Bottleneck Metrics ---
     bottleneck_count = len(bottlenecks)
     critical_bottleneck_count = sum(1 for b in bottlenecks if b.severity_label == "Critical")
+    critical_bottleneck_pct = critical_bottleneck_count / total_samples
     max_bsi = max((b.bsi_score for b in bottlenecks), default=0.0)
 
     # --- Bottleneck Penalty (0-1) ---
@@ -74,16 +77,21 @@ def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViab
     # --- Rejection Rules ---
     rejection_reasons: List[str] = []
 
-    if max_bsi > REJECT_BSI_THRESHOLD:
+    if max_bsi >= REJECT_BSI_THRESHOLD:
         rejection_reasons.append(
-            f"Contains catastrophic bottleneck (BSI {max_bsi:.2f} > {REJECT_BSI_THRESHOLD})"
+            f"Contains catastrophic bottleneck (BSI {max_bsi:.2f} >= {REJECT_BSI_THRESHOLD:.2f})"
+        )
+
+    if critical_bottleneck_pct >= REJECT_CRITICAL_BOTTLENECK_PCT and critical_bottleneck_count >= 2:
+        rejection_reasons.append(
+            f"Excessive critical bottleneck density ({critical_bottleneck_pct:.0%} of corridor flagged critical - {critical_bottleneck_count}/{total_samples} samples)"
         )
 
     high_hazard_count = sum(1 for s in samples if (s.hazard_score or 0) > 0.5)
     high_hazard_pct = high_hazard_count / total_samples
     if high_hazard_pct > REJECT_HAZARD_EXPOSURE_PCT:
         rejection_reasons.append(
-            f"Excessive hazard exposure ({high_hazard_pct:.0%} of corridor above threshold)"
+            f"Excessive severe hazard exposure ({high_hazard_pct:.0%} of corridor above 0.50 threshold)"
         )
 
     status = "REJECTED" if rejection_reasons else "CANDIDATE"
@@ -104,7 +112,7 @@ def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViab
     logger.info(
         f"Route {route.route_id}: Viability={score:.1f}, "
         f"Status={status}, Bottlenecks={bottleneck_count} "
-        f"(Critical={critical_bottleneck_count}), "
+        f"(Critical={critical_bottleneck_count}, {critical_bottleneck_pct:.1%}), "
         f"HazardExposure={hazard_exposure_pct:.1%}"
     )
 
