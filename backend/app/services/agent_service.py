@@ -5,9 +5,12 @@ from app.services.bottleneck_service import analyze_route_bottlenecks
 from app.services.redundancy_service import select_independent_backup
 from app.services.viability_service import assess_route_viability, rank_routes, risk_model_metadata
 from app.services.mireye_service import mireye_data_service
+from app.services.nbi_service import nbi_service
+from app.services.segmentation_service import segmentation_service
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
 
 
 async def run_agent_analysis(
@@ -32,12 +35,13 @@ async def run_agent_analysis(
         detail=f"Received {len(routes)} candidate evacuation corridors from {origin.display_name} to {destination.display_name} under {disaster_label} mode"
     ))
 
-    # --- Step 2: Bottleneck Analysis ---
+    # --- Step 2: Bottleneck & Segment Analysis ---
     step_num += 1
     total_bottlenecks = 0
     total_critical = 0
     for route in routes:
         bottlenecks, route = analyze_route_bottlenecks(route, disaster_type=disaster_type)
+        route.segments = segmentation_service.segment_route(route)
         total_bottlenecks += len(bottlenecks)
         total_critical += sum(1 for b in bottlenecks if b.severity_label == "Critical")
 
@@ -192,16 +196,19 @@ def _build_evidence_coverage(routes: List[Route]) -> dict:
         for field in (sample.mireye_data or {}).get("raw_fields", {}).values():
             if isinstance(field, dict) and field.get("source"):
                 source_names.add(field["source"])
+    
+    nbi_mode_str = "Synthetic Fallback Model" if nbi_service.is_fallback_mode() else "FHWA National Bridge Inventory (SQLite indexed)"
+    
     return {
         "route_count": len(routes),
         "sample_count": len(samples),
         "mireye_probe_count": len(mireye_samples),
         "bridge_evidence_sample_count": len(bridge_samples),
+        "nbi_mode": nbi_mode_str,
+        "nbi_fallback_mode": nbi_service.is_fallback_mode(),
         "sources": sorted(source_names),
         "collection_policy": f"Open-Meteo elevation covers all samples; Mireye fetch targets up to {settings.MIREYE_MAX_PROBES} high-value samples per route with at most {settings.MIREYE_MAX_CONCURRENCY} concurrent requests; Mireye Ask is reserved for the single worst bottleneck.",
     }
-
-
 
 
 def _build_ask_question(bottleneck, route_id: str, origin, destination, routes: list, disaster_type: str = "ALL_HAZARDS") -> str:
@@ -343,13 +350,23 @@ def _generate_trade_off(
 
     fastest_route = next((r for r in routes if r.duration_s == fastest_duration_s), None)
 
-    # If the primary IS the fastest, no trade-off needed
+    # If the primary IS the fastest
     if fastest_route and fastest_route.route_id == primary.route_id:
-        return (
-            f"The recommended primary corridor ({primary.route_id.upper().replace('_', ' ')}) "
-            f"is also the fastest route at {primary.travel_time_min} min. "
-            f"No speed-safety trade-off is required."
-        )
+        crit_count = primary.viability.critical_bottleneck_count
+        haz_pct = primary.viability.hazard_exposure_pct
+        if crit_count == 0 and haz_pct < 20.0:
+            return (
+                f"The recommended primary corridor ({primary.route_id.upper().replace('_', ' ')}) "
+                f"is also the fastest route at {primary.travel_time_min} min with low hazard exposure ({haz_pct:.0f}%). "
+                f"No speed-safety trade-off is required."
+            )
+        else:
+            return (
+                f"The recommended primary corridor ({primary.route_id.upper().replace('_', ' ')}) "
+                f"is the fastest available route at {primary.travel_time_min} min (Viability: {primary.viability.score:.0f}/100), "
+                f"with {crit_count} critical bottleneck(s) and {haz_pct:.0f}% hazard exposure. "
+                f"Proceed with situational awareness."
+            )
 
     # Primary is NOT the fastest - explain the trade-off
     if fastest_route:
@@ -384,4 +401,5 @@ def _generate_trade_off(
         f"Primary corridor {primary.route_id.upper().replace('_', ' ')} selected with "
         f"viability score {primary.viability.score:.0f}/100."
     )
+
 
