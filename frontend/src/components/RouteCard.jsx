@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Clock,
   Navigation,
@@ -9,6 +9,10 @@ import {
   ShieldX,
   ShieldAlert,
   Layers,
+  Fuel,
+  ChevronDown,
+  ChevronUp,
+  Plus,
 } from "lucide-react";
 
 const ROUTE_COLORS = {
@@ -125,7 +129,9 @@ export default function RouteCard({
   isSelected,
   onSelect,
   fastestDuration,
+  onAddWaypoint,
 }) {
+  const [showStopsList, setShowStopsList] = useState(false);
   const colorScheme = ROUTE_COLORS[route.route_id] || ROUTE_COLORS.route_1;
   const isFastest = route.travel_time_min === fastestDuration;
   const viability = route.viability;
@@ -175,39 +181,62 @@ export default function RouteCard({
         {viability && <ViabilityGauge score={viability.score} />}
       </div>
 
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-2 gap-3 py-2 my-2 border-y border-slate-800/60">
-        <div>
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-            ESTIMATED ETA
-          </span>
-          <div className="flex items-baseline space-x-1.5 mt-0.5">
-            <Clock className="h-3.5 w-3.5 text-slate-400" />
-            <span className="text-lg font-extrabold text-slate-100">
-              {route.travel_time_min}{" "}
-              <span className="text-xs font-normal text-slate-400">min</span>
+      {/* Metrics Row */}
+      <div className="grid grid-cols-3 gap-2 my-3 p-2 bg-slate-950/60 rounded-lg border border-slate-800/60">
+        {/* Travel Time */}
+        <div className="text-center">
+          <div className="flex items-center justify-center space-x-1 text-slate-400 mb-0.5">
+            <Clock className="w-3 h-3" />
+            <span className="text-[10px] uppercase font-mono">Time</span>
+          </div>
+          <div className="flex items-baseline justify-center space-x-1.5 mt-0.5">
+            <span className="text-lg font-extrabold text-slate-100 font-mono">
+              {route.travel_time_min}
             </span>
+            <span className="text-[10px] font-normal text-slate-400">min</span>
           </div>
           {timeDiffMin > 0 && (
-            <span className="text-[11px] font-medium text-amber-400">
-              +{timeDiffMin} min vs fastest
+            <span className="block text-[9px] text-amber-400 font-mono">
+              +{timeDiffMin}m vs fast
             </span>
           )}
         </div>
 
-        <div>
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-            DISTANCE
-          </span>
-          <div className="flex items-baseline space-x-1.5 mt-0.5">
-            <Navigation className="h-3.5 w-3.5 text-slate-400" />
-            <span className="text-lg font-extrabold text-slate-100">
-              {route.distance_km}{" "}
-              <span className="text-xs font-normal text-slate-400">km</span>
+        {/* Distance */}
+        <div className="text-center border-l border-r border-slate-800/60">
+          <div className="flex items-center justify-center space-x-1 text-slate-400 mb-0.5">
+            <Navigation className="w-3 h-3" />
+            <span className="text-[10px] uppercase font-mono">Dist</span>
+          </div>
+          <div className="flex items-baseline justify-center space-x-1.5 mt-0.5">
+            <span className="text-lg font-extrabold text-slate-100 font-mono">
+              {route.distance_km}
+            </span>
+            <span className="text-[10px] font-normal text-slate-400">km</span>
+          </div>
+        </div>
+
+        {/* Hazard Exposure */}
+        <div className="text-center">
+          <div className="flex items-center justify-center space-x-1 text-slate-400 mb-0.5">
+            <AlertTriangle className="w-3 h-3" />
+            <span className="text-[10px] uppercase font-mono">Hazard</span>
+          </div>
+          <div className="flex items-baseline justify-center space-x-1.5 mt-0.5">
+            <span
+              className={`text-lg font-extrabold font-mono ${
+                (route.viability?.hazard_exposure_pct || 0) > 30
+                  ? "text-rose-400"
+                  : (route.viability?.hazard_exposure_pct || 0) > 10
+                    ? "text-amber-400"
+                    : "text-emerald-400"
+              }`}
+            >
+              {Math.round(route.viability?.hazard_exposure_pct || 0)}%
             </span>
           </div>
-          <span className="text-[11px] text-slate-400 block font-mono">
-            {route.samples ? route.samples.length : 0} physical samples
+          <span className="text-[9px] text-slate-400 block font-mono mt-0.5">
+            {route.samples ? route.samples.length : 0} samples
           </span>
         </div>
       </div>
@@ -215,38 +244,6 @@ export default function RouteCard({
       {/* Viability & Bottleneck Bar */}
       {viability && (
         <div className="space-y-2 mb-2">
-          {/* Hazard Exposure Bar */}
-          <div className="space-y-1">
-            <div className="flex items-center justify-between text-[10px] font-mono">
-              <span className="text-slate-400 uppercase font-semibold">
-                Hazard Exposure
-              </span>
-              <span
-                className={
-                  viability.hazard_exposure_pct > 20
-                    ? "text-amber-400 font-bold"
-                    : "text-slate-300"
-                }
-              >
-                {viability.hazard_exposure_pct.toFixed(0)}%
-              </span>
-            </div>
-            <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all duration-700 ${
-                  viability.hazard_exposure_pct > 30
-                    ? "bg-rose-500"
-                    : viability.hazard_exposure_pct > 15
-                      ? "bg-amber-500"
-                      : "bg-emerald-500"
-                }`}
-                style={{
-                  width: `${Math.min(100, viability.hazard_exposure_pct)}%`,
-                }}
-              />
-            </div>
-          </div>
-
           {/* Bottleneck Count */}
           <div className="flex items-center justify-between text-[11px]">
             <span className="text-slate-400 font-mono flex items-center gap-1">
@@ -306,6 +303,154 @@ export default function RouteCard({
             )}
           </div>
         )}
+
+      {/* Refueling & Energy Readiness Panel */}
+      {route.infrastructure_summary &&
+        (() => {
+          const infra = route.infrastructure_summary;
+          const allStations = route?.infrastructure?.stations || [
+            ...(route?.infrastructure?.gas_stations || []),
+            ...(route?.infrastructure?.ev_fast_stations || []),
+            ...(route?.infrastructure?.ev_standard_stations || []),
+          ];
+
+          const isFuelDesert = infra.max_gas_gap_km > 45.0;
+          const maxGasGap = Math.round(infra.max_gas_gap_km || 0);
+          const maxEvGap = Math.round(infra.max_ev_fast_gap_km || 0);
+
+          return (
+            <div className="mb-3 p-2.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs space-y-2">
+              <div className="flex items-center justify-between font-mono">
+                <span className="text-slate-200 font-bold flex items-center gap-1.5 text-xs">
+                  <Fuel className="h-4 w-4 text-amber-400" />
+                  Refuel & Range Readiness
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5 pt-1 text-center font-mono">
+                <div className="bg-slate-950/80 p-1.5 rounded-lg border border-slate-800/80">
+                  <span className="text-[9px] text-slate-400 uppercase block font-semibold">
+                    Gas / Diesel
+                  </span>
+                  <span className="text-sm font-bold text-amber-400">
+                    {infra.total_gas_stations || 0}
+                  </span>
+                  <span className="text-[8px] text-slate-400 block mt-0.5">
+                    Max gap: {maxGasGap} km
+                  </span>
+                </div>
+                <div className="bg-slate-950/80 p-1.5 rounded-lg border border-slate-800/80">
+                  <span className="text-[9px] text-slate-400 uppercase block font-semibold">
+                    DC Fast EV
+                  </span>
+                  <span className="text-sm font-bold text-emerald-400">
+                    {infra.total_ev_fast_stations || 0}
+                  </span>
+                  <span className="text-[8px] text-slate-400 block mt-0.5">
+                    Max gap: {maxEvGap} km
+                  </span>
+                </div>
+                <div className="bg-slate-950/80 p-1.5 rounded-lg border border-slate-800/80">
+                  <span className="text-[9px] text-slate-400 uppercase block font-semibold">
+                    Level 2 EV
+                  </span>
+                  <span className="text-sm font-bold text-sky-400">
+                    {infra.total_ev_standard_stations || 0}
+                  </span>
+                  <span className="text-[8px] text-slate-400 block mt-0.5">
+                    Standard AC
+                  </span>
+                </div>
+              </div>
+
+              {/* Expandable Corridor Station List */}
+              {allStations.length > 0 && (
+                <div className="pt-1 border-t border-slate-800/80">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowStopsList(!showStopsList);
+                    }}
+                    className="w-full flex items-center justify-between text-[11px] text-cyan-400 hover:text-cyan-300 font-mono font-semibold transition-colors cursor-pointer py-1"
+                  >
+                    <span>
+                      {showStopsList
+                        ? "Hide Station List"
+                        : `View ${allStations.length} Stations Along Corridor`}
+                    </span>
+                    {showStopsList ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+
+                  {showStopsList && (
+                    <div className="mt-2 space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                      {allStations.map((st, sIdx) => {
+                        const isGas = st.station_type === "gas";
+                        const isFast =
+                          st.station_type === "ev_fast" ||
+                          st.speed_tier === "fast";
+                        return (
+                          <div
+                            key={st.id || `st-item-${sIdx}`}
+                            className="bg-slate-950/90 border border-slate-800 rounded-lg p-2 flex items-center justify-between text-xs font-mono gap-2"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                {isGas ? (
+                                  <span className="px-1.5 py-0.5 bg-amber-950/80 border border-amber-800 text-amber-300 text-[9px] font-bold rounded uppercase tracking-wider">
+                                    Gasoline / Diesel
+                                  </span>
+                                ) : isFast ? (
+                                  <span className="px-1.5 py-0.5 bg-emerald-950/80 border border-emerald-800 text-emerald-300 text-[9px] font-bold rounded uppercase tracking-wider">
+                                    DC Fast Charger
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 bg-sky-950/80 border border-sky-800 text-sky-300 text-[9px] font-bold rounded uppercase tracking-wider">
+                                    Standard AC
+                                  </span>
+                                )}
+                                <span className="font-bold text-slate-100 truncate text-xs">
+                                  {st.name}
+                                </span>
+                              </div>
+                              <div className="text-slate-400 text-[10px] mt-0.5">
+                                {st.distance_from_origin_km} km along route ·{" "}
+                                {st.stalls_display ||
+                                  (isGas ? "Multi-Pump" : "Stalls")}
+                              </div>
+                            </div>
+                            {onAddWaypoint && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onAddWaypoint({
+                                    latitude: st.latitude ?? st.lat,
+                                    longitude: st.longitude ?? st.lon,
+                                    query: st.name,
+                                    display_name: st.name,
+                                  });
+                                }}
+                                className="shrink-0 px-2 py-1 bg-cyan-950 hover:bg-cyan-900 border border-cyan-700 text-cyan-200 text-[10px] font-bold rounded flex items-center gap-1 cursor-pointer transition-colors"
+                              >
+                                <Plus className="h-3 w-3 text-cyan-400" /> Add
+                                Stop
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
       <div className="flex items-center justify-between pt-1">
         <span className="text-xs text-slate-400">

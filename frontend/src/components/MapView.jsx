@@ -20,6 +20,110 @@ import {
   Plus,
 } from "lucide-react";
 
+
+const normalizeLatLon = (item) => {
+  const latitude = Number(item?.latitude ?? item?.lat);
+  const longitude = Number(item?.longitude ?? item?.lon);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  return { latitude, longitude };
+};
+
+const dedupeStationsForDisplay = (stations, maxStations = 15) => {
+  const distinctStations = [];
+
+  for (const station of stations) {
+    const coords = normalizeLatLon(station);
+    if (!coords) continue;
+
+    const isNear = distinctStations.some((existing) => {
+      const existingCoords = normalizeLatLon(existing);
+      if (!existingCoords) return false;
+
+      return (
+        Math.hypot(
+          existingCoords.latitude - coords.latitude,
+          existingCoords.longitude - coords.longitude,
+        ) < 0.006
+      );
+    });
+
+    if (!isNear || distinctStations.length < maxStations) {
+      distinctStations.push(station);
+    }
+  }
+
+  return distinctStations;
+};
+
+const createStationChipIcon = (isGas, isFast) => {
+  const shortLabel = isGas ? "Fuel" : isFast ? "Fast EV" : "AC";
+  const bgColor = isGas ? "rgba(88, 28, 135, 0.92)" : isFast ? "rgba(6, 78, 59, 0.92)" : "rgba(7, 89, 133, 0.92)";
+  const borderColor = isGas ? "#c084fc" : isFast ? "#10b981" : "#38bdf8";
+  const textColor = isGas ? "#f3e8ff" : isFast ? "#a7f3d0" : "#bae6fd";
+  const dotColor = isGas ? "#c084fc" : isFast ? "#10b981" : "#38bdf8";
+
+  return L.divIcon({
+    className: "custom-station-chip-marker",
+    html: `
+      <div style="
+        transform: translate(-50%, -50%);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 6px 2px 4px;
+        border-radius: 999px;
+        border: 1px solid ${borderColor};
+        background: ${bgColor};
+        color: ${textColor};
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 9px;
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+        box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+      ">
+        <span style="
+          width: 6px;
+          height: 6px;
+          border-radius: 999px;
+          background: ${dotColor};
+          box-shadow: 0 0 6px ${dotColor};
+          flex: 0 0 auto;
+        "></span>
+        <span>${shortLabel}</span>
+      </div>
+    `,
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+  });
+};
+
+const createStationDotIcon = (isGas, isFast) => {
+  const dotColor = isGas ? "#c084fc" : isFast ? "#10b981" : "#38bdf8";
+
+  return L.divIcon({
+    className: "custom-station-dot-marker",
+    html: `
+      <div style="
+        transform: translate(-50%, -50%);
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: ${dotColor};
+        border: 1.5px solid rgba(9, 9, 11, 0.95);
+        box-shadow: 0 0 8px ${dotColor}aa;
+      "></div>
+    `,
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
+  });
+};
+
 const ROUTE_LINE_COLORS = {
   route_1: "#06b6d4", // Cyan
   route_2: "#a855f7", // Purple
@@ -169,13 +273,20 @@ function MapClickHandler({
 
 const parseCoordStr = (val) => {
   if (!val) return null;
-  if (typeof val === "object" && val.latitude && val.longitude) {
+  if (
+    typeof val === "object" &&
+    Number.isFinite(Number(val.latitude)) &&
+    Number.isFinite(Number(val.longitude))
+  ) {
+    const latitude = Number(val.latitude);
+    const longitude = Number(val.longitude);
+
     return {
-      latitude: val.latitude,
-      longitude: val.longitude,
+      latitude,
+      longitude,
       display_name:
         val.display_name ||
-        `${val.latitude.toFixed(4)}, ${val.longitude.toFixed(4)}`,
+        `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
     };
   }
   if (typeof val === "string") {
@@ -195,7 +306,7 @@ export default function MapView({
   origin,
   destination,
   waypoints = [],
-  routes,
+  routes = [],
   selectedRouteId,
   onSelectRoute,
   showSamples,
@@ -204,6 +315,7 @@ export default function MapView({
   onSetOrigin,
   onSetDestination,
   onSetWaypoint,
+  onAddWaypoint,
   rawOriginStr,
   rawDestinationStr,
   rawWaypoints = [],
@@ -213,6 +325,8 @@ export default function MapView({
   pickerMode,
   setPickerMode,
 }) {
+  const [showRefuelHubs, setShowRefuelHubs] = useState(false);
+  const [refuelFilter, setRefuelFilter] = useState("all"); // 'all' | 'gas' | 'fast_ev' | 'std_ev'
   const originObj =
     parseCoordStr(origin) || resolvedOrigin || parseCoordStr(rawOriginStr);
   const destinationObj =
@@ -252,7 +366,41 @@ export default function MapView({
   }
 
   const selectedRouteObj =
-    routes.find((r) => r.route_id === selectedRouteId) || routes[0];
+    routes.find((r) => r.route_id === selectedRouteId) || routes[0] || null;
+
+  const allStations = selectedRouteObj?.infrastructure?.stations || [
+    ...(selectedRouteObj?.infrastructure?.gas_stations || []),
+    ...(selectedRouteObj?.infrastructure?.ev_fast_stations || []),
+    ...(selectedRouteObj?.infrastructure?.ev_standard_stations || []),
+  ];
+
+  const gasStations =
+    selectedRouteObj?.infrastructure?.gas_stations?.length > 0
+      ? selectedRouteObj.infrastructure.gas_stations
+      : allStations.filter((s) => s.station_type === "gas");
+
+  const evFastStations =
+    selectedRouteObj?.infrastructure?.ev_fast_stations?.length > 0
+      ? selectedRouteObj.infrastructure.ev_fast_stations
+      : allStations.filter(
+          (s) => s.station_type === "ev_fast" || s.speed_tier === "fast",
+        );
+
+  const evStdStations =
+    selectedRouteObj?.infrastructure?.ev_standard_stations?.length > 0
+      ? selectedRouteObj.infrastructure.ev_standard_stations
+      : allStations.filter(
+          (s) => s.station_type === "ev_standard" && s.speed_tier !== "fast",
+        );
+
+  const stationsToRender =
+    refuelFilter === "gas"
+      ? gasStations
+      : refuelFilter === "fast_ev"
+        ? evFastStations
+        : refuelFilter === "std_ev"
+          ? evStdStations
+          : allStations;
 
   // Construct preview path coordinates (Origin -> Waypoints -> Destination)
   const previewPositions = [];
@@ -480,6 +628,21 @@ export default function MapView({
 
             return (
               <React.Fragment key={route.route_id}>
+                {/* Invisible click target so alternate corridors are easy to select from the map */}
+                <Polyline
+                  positions={positions}
+                  eventHandlers={{
+                    click: () => onSelectRoute(route.route_id),
+                  }}
+                  pathOptions={{
+                    color: strokeColor,
+                    weight: isSelected ? 16 : 18,
+                    opacity: 0,
+                    lineCap: "round",
+                    lineJoin: "round",
+                  }}
+                />
+
                 {/* Outer Glow for Selected Route */}
                 {isSelected && (
                   <Polyline
@@ -759,7 +922,222 @@ export default function MapView({
             </Marker>
           ));
         })()}
+        {/* Refueling Infrastructure Station Markers */}
+        {showRefuelHubs &&
+          (() => {
+            const distinctStations = dedupeStationsForDisplay(stationsToRender);
+
+            return distinctStations.map((st, sIdx) => {
+              const coords = normalizeLatLon(st);
+              if (!coords) return null;
+
+              const isGas = st.station_type === "gas";
+              const isFast =
+                st.station_type === "ev_fast" || st.speed_tier === "fast";
+              const quickLabel = isGas
+                ? "Fuel stop"
+                : isFast
+                  ? "Fast EV charger"
+                  : "Standard AC charger";
+              const useCompactDot = refuelFilter === "all";
+                
+              const badgeClasses = isGas
+                ? "bg-fuchsia-950/80 border-fuchsia-700 text-fuchsia-200"
+                : isFast
+                  ? "bg-emerald-950/80 border-emerald-700 text-emerald-300"
+                  : "bg-sky-950/80 border-sky-700 text-sky-300";
+
+              return (
+                <Marker
+                  key={st.id || `st-${sIdx}`}
+                  position={[coords.latitude, coords.longitude]}
+                  icon={
+                    useCompactDot
+                      ? createStationDotIcon(isGas, isFast)
+                      : createStationChipIcon(isGas, isFast)
+                  }
+                >
+                  <Tooltip
+                    direction="top"
+                    offset={useCompactDot ? [0, -6] : [0, -8]}
+                    opacity={1}
+                    className="custom-traffic-tooltip"
+                  >
+                    <div className="font-mono text-[10px] text-zinc-100 leading-tight">
+                      <span className="font-bold text-slate-100">{quickLabel}</span>
+                      <span className="text-zinc-400"> · {st.name}</span>
+                    </div>
+                  </Tooltip>
+                  <Popup>
+                    <div className="p-1 space-y-1.5 font-sans text-xs min-w-[220px]">
+                      <div className="flex items-center justify-between">
+                        <span
+                          className={`text-[9px] font-extrabold uppercase font-mono px-1.5 py-0.5 rounded border ${badgeClasses}`}
+                        >
+                          {st.speed_label ||
+                            (isGas
+                              ? "Gasoline / Diesel"
+                              : isFast
+                                ? "DC Fast Charger"
+                                : "Standard AC")}
+                        </span>
+                        <span className="text-[9px] text-slate-400 font-mono">
+                          {st.offset_distance_m}m off-route
+                        </span>
+                      </div>
+
+                      <div className="font-bold text-slate-100 text-xs leading-snug">
+                        {st.name}
+                      </div>
+
+                      {st.brand && st.brand !== st.name && (
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          Network: {st.brand}
+                        </div>
+                      )}
+
+                      {/* Stall Capacity & Power Tier */}
+                      <div className="bg-slate-900/90 border border-slate-800 rounded p-1.5 space-y-1 text-[10px] font-mono">
+                        <div className="flex items-center justify-between text-slate-300">
+                          <span>Capacity:</span>
+                          <span className="font-bold text-slate-100">
+                            {st.stalls_display ||
+                              (isGas ? "Multi-Pump" : "Standard Stalls")}
+                          </span>
+                        </div>
+                        {st.power_label && (
+                          <div className="flex items-center justify-between text-slate-300">
+                            <span>Output:</span>
+                            <span className="text-slate-300">
+                              {st.power_label}
+                            </span>
+                          </div>
+                        )}
+                        {st.est_charge_time && (
+                          <div className="flex items-center justify-between text-slate-300">
+                            <span>Est. Service:</span>
+                            <span
+                              className={
+                                isGas
+                                  ? "text-fuchsia-200 font-semibold"
+                                  : isFast
+                                    ? "text-emerald-300 font-semibold"
+                                    : "text-sky-300"
+                              }
+                            >
+                              {st.est_charge_time}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-[10px] text-cyan-300 font-mono">
+                        Corridor Point: {st.distance_from_origin_km} km from
+                        origin
+                      </div>
+
+                      {onAddWaypoint && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onAddWaypoint({
+                              latitude: st.latitude ?? st.lat,
+                              longitude: st.longitude ?? st.lon,
+                              query: st.name,
+                              display_name: st.name,
+                            })
+                          }
+                          className="w-full mt-1 px-2 py-1 bg-cyan-950 hover:bg-cyan-900 border border-cyan-700 text-cyan-200 text-[10px] font-mono font-semibold rounded flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <Plus className="h-3 w-3 text-cyan-400" /> Add as
+                          Refuel Waypoint
+                        </button>
+                      )}
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            });
+          })()}
       </MapContainer>
+
+      {/* Minimalist Floating Refuel & EV Map HUD */}
+      {selectedRouteObj && allStations.length > 0 && (
+        <div className="absolute top-4 right-4 z-30 flex flex-col items-end gap-1.5">
+          <div className="glass-panel border border-slate-800/80 rounded-xl p-1.5 shadow-2xl flex items-center gap-1.5 text-xs font-mono backdrop-blur-md bg-slate-950/85">
+            <button
+              type="button"
+              onClick={() => setShowRefuelHubs(!showRefuelHubs)}
+              title={
+                showRefuelHubs
+                  ? "Hide Fuel & EV Stations"
+                  : "Show Fuel & EV Stations"
+              }
+              className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-all ${
+                showRefuelHubs
+                  ? "bg-amber-950/90 border-amber-500/80 text-amber-300 shadow-md shadow-amber-950/50 font-bold"
+                  : "bg-slate-900/80 border-slate-700/60 text-slate-300 hover:text-amber-300 hover:border-amber-700/50"
+              }`}
+            >
+              <Fuel
+                className={`h-4 w-4 ${showRefuelHubs ? "text-amber-400" : "text-slate-400"}`}
+              />
+              <span className="px-1.5 py-0.2 bg-slate-950 rounded text-[10px] font-mono font-bold text-amber-400 border border-amber-900/60">
+                {allStations.length}
+              </span>
+            </button>
+
+            {showRefuelHubs && (
+              <div className="flex items-center gap-1 pl-1.5 border-l border-slate-800 text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => setRefuelFilter("all")}
+                  className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                    refuelFilter === "all"
+                      ? "bg-slate-800 text-slate-100 font-bold border border-slate-600"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  All ({allStations.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRefuelFilter("gas")}
+                  className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                    refuelFilter === "gas"
+                      ? "bg-amber-900/80 border border-amber-600/60 text-amber-200 font-bold"
+                      : "text-slate-400 hover:text-amber-300"
+                  }`}
+                >
+                  Gas ({gasStations.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRefuelFilter("fast_ev")}
+                  className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                    refuelFilter === "fast_ev"
+                      ? "bg-emerald-900/80 border border-emerald-600/60 text-emerald-200 font-bold"
+                      : "text-slate-400 hover:text-emerald-300"
+                  }`}
+                >
+                  Fast EV ({evFastStations.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRefuelFilter("std_ev")}
+                  className={`px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                    refuelFilter === "std_ev"
+                      ? "bg-sky-900/80 border border-sky-600/60 text-sky-200 font-bold"
+                      : "text-slate-400 hover:text-sky-300"
+                  }`}
+                >
+                  Std EV ({evStdStations.length})
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Legend & Controls Overlay - ONLY SHOWN IF ROUTES ARE PRESENT */}
       {routes && routes.length > 0 && (
@@ -785,7 +1163,7 @@ export default function MapView({
                   }
                 >
                   {route.tag || `Corridor ${index + 1}`}
-                  {route.route_id === selectedRouteId ? " · selected" : ""}
+                  {route.route_id === selectedRouteId ? " · Selected" : ""}
                 </span>
               </div>
             ))}
@@ -798,6 +1176,22 @@ export default function MapView({
                 </span>
                 <span className="text-slate-300">NBI bridge evidence</span>
               </div>
+            )}
+            {selectedRouteObj && allStations.length > 0 && (
+              <>
+                <div className="flex items-center space-x-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-fuchsia-400 shadow-[0_0_8px_rgba(232,121,249,0.6)]"></span>
+                  <span className="text-slate-400">Gasoline / diesel stop</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]"></span>
+                  <span className="text-slate-400">High-speed charging</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.55)]"></span>
+                  <span className="text-slate-400">Standard charger</span>
+                </div>
+              </>
             )}
           </div>
           {/* Hazard color key */}

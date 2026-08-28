@@ -63,6 +63,7 @@ def point_to_segment_distance(
 class InfrastructureService:
     def __init__(self):
         self.overpass_mirrors = [
+            "https://overpass.kumi.systems/api/interpreter",
             "https://overpass-api.de/api/interpreter",
             "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
         ]
@@ -111,7 +112,7 @@ class InfrastructureService:
         for mirror_url in self.overpass_mirrors:
             try:
                 async with httpx.AsyncClient(timeout=self.timeout, headers=headers) as client:
-                    resp = await client.post(mirror_url, data=query)
+                    resp = await client.post(mirror_url, data={"data": query})
                     if resp.status_code == 200:
                         data = resp.json()
                         raw_elements = data.get("elements", [])
@@ -299,6 +300,7 @@ class InfrastructureService:
             "max_ev_fast_gap_km": max_ev_fast_gap_km,
             "fuel_desert_warning": "; ".join(warnings) if warnings else None,
             "infrastructure_penalty": penalty,
+            "stations": gas_stations + ev_fast_stations + ev_standard_stations,
             "gas_stations": gas_stations,
             "ev_fast_stations": ev_fast_stations,
             "ev_standard_stations": ev_standard_stations,
@@ -330,6 +332,7 @@ class InfrastructureService:
             "max_ev_fast_gap_km": 0.0,
             "fuel_desert_warning": None,
             "infrastructure_penalty": 0.0,
+            "stations": [],
             "gas_stations": [],
             "ev_fast_stations": [],
             "ev_standard_stations": [],

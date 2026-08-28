@@ -48,7 +48,7 @@ class RoutingService:
             coords = r_data.get("geometry", {}).get("coordinates", [])
 
             geometry = GeoJSONLineString(type="LineString", coordinates=coords)
-            tag = "Fastest Evacuation Corridor" if idx == 0 else f"Alternative Evacuation Corridor {idx}"
+            tag = "Fastest Evacuation Corridor" if idx == 0 else f"Alternative Evacuation Corridor {idx + 1}"
 
             # Sample route physics and project pre-fetched infrastructure
             samples = await sampling_service.sample_route(
@@ -119,7 +119,7 @@ class RoutingService:
                 if abs(r.travel_time_min - min_time) < 0.05:
                     r.tag = "Fastest Evacuation Corridor"
                 else:
-                    r.tag = f"Alternative Evacuation Corridor {idx}"
+                    r.tag = f"Alternative Evacuation Corridor {idx + 1}"
 
         return parsed_routes
 
