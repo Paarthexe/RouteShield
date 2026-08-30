@@ -1,4 +1,12 @@
-export async function analyzeRoutes(origin, destination, sampleIntervalM = 500, waypoints = [], disasterType = 'ALL_HAZARDS') {
+export async function analyzeRoutes(
+  origin,
+  destination,
+  sampleIntervalM = 500,
+  waypoints = [],
+  disasterType = 'ALL_HAZARDS',
+  vehicleProfile = 'STANDARD_VEHICLE',
+  hazardBarriers = []
+) {
   const response = await fetch('/api/routes/analyze', {
     method: 'POST',
     headers: {
@@ -10,9 +18,10 @@ export async function analyzeRoutes(origin, destination, sampleIntervalM = 500, 
       waypoints: waypoints.filter(w => typeof w === 'string' ? w.trim() !== '' : Boolean(w)),
       sample_interval_m: sampleIntervalM,
       disaster_type: disasterType,
+      vehicle_profile: vehicleProfile,
+      hazard_barriers: hazardBarriers,
     }),
   });
-
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -23,13 +32,14 @@ export async function analyzeRoutes(origin, destination, sampleIntervalM = 500, 
   return await response.json();
 }
 
-export async function resolveLocation(query) {
+export async function resolveLocation(query, signal = null) {
   const response = await fetch('/api/location/resolve', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ query }),
+    signal: signal || undefined,
   });
 
   if (!response.ok) {
@@ -67,6 +77,20 @@ export async function repairSegment(routeId, segmentId, payload = {}) {
   return await response.json();
 }
 
+export async function planZoneEvacuation(payload) {
+  const response = await fetch('/api/zones/plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to plan zone evacuation');
+  }
+
+  return await response.json();
+}
 
 /**
  * Returns the SSE URL for a route's live monitoring stream.
@@ -77,4 +101,3 @@ export function getLiveMonitoringUrl(routeId, { disasterType = 'ALL_HAZARDS', cu
   if (currentSampleId) params.set('current_sample_id', currentSampleId);
   return `/api/routes/${encodeURIComponent(routeId)}/live?${params}`;
 }
-

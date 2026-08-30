@@ -58,7 +58,7 @@ class SegmentRepairService:
         end_lon, end_lat = target_seg.end_coord
 
         # Find replacement sub-path
-        replacement_coords = await self._query_subpath(
+        replacement_coords, subpath_dur_s, subpath_dist_m = await self._query_subpath(
             start_coord=(start_lon, start_lat),
             end_coord=(end_lon, end_lat),
             avoid_coord=avoid_coordinate,
@@ -91,18 +91,29 @@ class SegmentRepairService:
 
         new_geometry = GeoJSONLineString(type="LineString", coordinates=spliced_coords)
 
-        # Compute updated total distance and duration
-        # Query OSRM for fast total distance/duration estimate or compute from geometry
-        tot_dist_m = 0.0
-        for k in range(len(spliced_coords) - 1):
-            p1 = spliced_coords[k]
-            p2 = spliced_coords[k + 1]
-            dx = (p2[0] - p1[0]) * math.cos(math.radians((p1[1] + p2[1]) / 2.0)) * 111320.0
-            dy = (p2[1] - p1[1]) * 110540.0
-            tot_dist_m += math.hypot(dx, dy)
+        # Calculate prefix and suffix distances to preserve accurate speeds on unaffected segments
+        def _calc_dist_m(pts: List[Any]) -> float:
+            tot = 0.0
+            for k in range(len(pts) - 1):
+                p1 = pts[k]
+                p2 = pts[k + 1]
+                dx = (p2[0] - p1[0]) * math.cos(math.radians((p1[1] + p2[1]) / 2.0)) * 111320.0
+                dy = (p2[1] - p1[1]) * 110540.0
+                tot += math.hypot(dx, dy)
+            return tot
 
-        # Rough average driving speed ~60 km/h (16.6 m/s)
-        dur_s = (tot_dist_m / 16.6)
+        orig_dist_m = route.distance_m or (orig_dist_km * 1000.0)
+        orig_dur_s = route.duration_s or (orig_time_min * 60.0)
+        orig_speed_mps = orig_dist_m / max(1.0, orig_dur_s)
+
+        prefix_dist_m = _calc_dist_m(prefix_coords) if len(prefix_coords) >= 2 else 0.0
+        suffix_dist_m = _calc_dist_m(suffix_coords) if len(suffix_coords) >= 2 else 0.0
+
+        prefix_dur_s = prefix_dist_m / orig_speed_mps if prefix_dist_m > 0 else 0.0
+        suffix_dur_s = suffix_dist_m / orig_speed_mps if suffix_dist_m > 0 else 0.0
+
+        tot_dist_m = prefix_dist_m + subpath_dist_m + suffix_dist_m
+        dur_s = prefix_dur_s + subpath_dur_s + suffix_dur_s
 
         route.geometry = new_geometry
         route.distance_m = round(tot_dist_m, 1)
@@ -181,14 +192,16 @@ class SegmentRepairService:
         end_coord: Tuple[float, float],
         avoid_coord: Optional[Coordinate] = None,
         action: str = "auto_repair"
-    ) -> List[Tuple[float, float]]:
-        """Query OSRM for an alternative sub-path with lateral bypass."""
+    ) -> Tuple[List[Tuple[float, float]], float, float]:
+        """Query OSRM for an alternative sub-path with lateral bypass. Returns (coords, duration_s, distance_m)."""
         lon1, lat1 = start_coord
         lon2, lat2 = end_coord
 
         d_lat = lat2 - lat1
         d_lon = lon2 - lon1
         direct_dist = math.hypot(d_lat, d_lon)
+        approx_dist_m = direct_dist * 111320.0 * 1.15
+        approx_dur_s = approx_dist_m / 16.6
 
         # Calculate a perpendicular bypass anchor point
         if avoid_coord:
@@ -233,14 +246,17 @@ class SegmentRepairService:
                 if resp.status_code == 200:
                     data = resp.json()
                     if data.get("code") == "Ok" and data.get("routes"):
-                        coords = data["routes"][0].get("geometry", {}).get("coordinates", [])
+                        cand = data["routes"][0]
+                        coords = cand.get("geometry", {}).get("coordinates", [])
                         if coords and len(coords) >= 2:
-                            return [tuple(c) for c in coords]
+                            subpath_dist = float(cand.get("distance", approx_dist_m))
+                            subpath_dur = float(cand.get("duration", approx_dur_s))
+                            return [tuple(c) for c in coords], subpath_dur, subpath_dist
             except Exception as e:
                 logger.warning(f"OSRM subpath query failed: {e}")
 
         # Fallback: simple interpolated line
-        return [start_coord, (w_lon, w_lat), end_coord]
+        return [start_coord, (w_lon, w_lat), end_coord], approx_dur_s, approx_dist_m
 
 
 segment_repair_service = SegmentRepairService()

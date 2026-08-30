@@ -4,7 +4,7 @@ import httpx
 from typing import List, Optional
 from fastapi import HTTPException, status
 from app.config import settings
-from app.models.route_models import Coordinate, Route, GeoJSONLineString, AgentDecision, Location
+from app.models.route_models import Coordinate, Route, GeoJSONLineString, AgentDecision, Location, HazardBarrier
 from app.services.sampling import sampling_service
 from app.services.cache import cache_service
 from app.services.agent_service import run_agent_analysis
@@ -24,7 +24,9 @@ class RoutingService:
         destination: Coordinate,
         waypoints: Optional[List[Coordinate]] = None,
         sample_interval_m: Optional[float] = None,
-        disaster_type: str = "ALL_HAZARDS"
+        disaster_type: str = "ALL_HAZARDS",
+        vehicle_profile: str = "STANDARD_VEHICLE",
+        hazard_barriers: Optional[List[HazardBarrier]] = None
     ) -> List[Route]:
         interval = sample_interval_m or settings.ROUTE_SAMPLE_INTERVAL_M
         w_list = waypoints or []
@@ -36,10 +38,20 @@ class RoutingService:
                 detail="No route found between these locations."
             )
 
+        # Vehicle speed profile multipliers
+        speed_factor = 1.0
+        if vehicle_profile == "EMERGENCY_BUS":
+            speed_factor = 1.30  # Heavy bus acceleration/deceleration curve
+        elif vehicle_profile == "HEAVY_SUPPLY":
+            speed_factor = 1.45  # Commercial freight speed ceiling
+        elif vehicle_profile == "RESCUE_4X4":
+            speed_factor = 1.05
+
         async def _process_single_route(idx: int, r_data: dict) -> Route:
             route_id = f"route_{idx + 1}"
             dist_m = float(r_data.get("distance", 0.0))
-            dur_s = float(r_data.get("duration", 0.0))
+            raw_dur_s = float(r_data.get("duration", 0.0))
+            dur_s = raw_dur_s * speed_factor
             coords = r_data.get("geometry", {}).get("coordinates", [])
 
             geometry = GeoJSONLineString(type="LineString", coordinates=coords)
@@ -49,7 +61,8 @@ class RoutingService:
                 route_id=route_id,
                 geometry=geometry,
                 interval_m=interval,
-                disaster_type=disaster_type
+                disaster_type=disaster_type,
+                hazard_barriers=hazard_barriers
             )
 
             # Deduplicate bridges across all sample points, compute summary
@@ -93,7 +106,6 @@ class RoutingService:
             route_obj.segments = segmentation_service.segment_route(route_obj)
             return route_obj
 
-
         # Sample all candidate routes concurrently
         route_tasks = [_process_single_route(idx, r_data) for idx, r_data in enumerate(raw_routes)]
         parsed_routes = await asyncio.gather(*route_tasks)
@@ -107,10 +119,12 @@ class RoutingService:
         destination_loc: Location,
         waypoints: Optional[List[Coordinate]] = None,
         sample_interval_m: Optional[float] = None,
-        disaster_type: str = "ALL_HAZARDS"
+        disaster_type: str = "ALL_HAZARDS",
+        vehicle_profile: str = "STANDARD_VEHICLE",
+        hazard_barriers: Optional[List[HazardBarrier]] = None
     ) -> tuple:
         """
-        Generate routes AND run the full agent analysis pipeline.
+        Generate routes AND run the full agent analysis pipeline with vehicle fleet and barrier support.
         Returns (routes, agent_decision).
         """
         routes = await self.generate_candidate_routes(
@@ -118,16 +132,50 @@ class RoutingService:
             destination=destination,
             waypoints=waypoints,
             sample_interval_m=sample_interval_m,
-            disaster_type=disaster_type
+            disaster_type=disaster_type,
+            vehicle_profile=vehicle_profile,
+            hazard_barriers=hazard_barriers
         )
 
         # Run agentic analysis pipeline
         agent_decision = await run_agent_analysis(
-            routes, origin_loc, destination_loc, disaster_type=disaster_type
+            routes,
+            origin_loc,
+            destination_loc,
+            disaster_type=disaster_type,
+            vehicle_profile=vehicle_profile,
+            hazard_barriers=hazard_barriers
         )
 
         return routes, agent_decision
 
+
+    async def _get_with_retry(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        params: Optional[dict] = None,
+        max_retries: int = 3
+    ) -> Optional[httpx.Response]:
+        """Execute GET request with exponential backoff retry for transient network and server errors."""
+        for attempt in range(max_retries):
+            try:
+                resp = await client.get(url, params=params)
+                if resp.status_code == 200:
+                    return resp
+                elif resp.status_code in (429, 500, 502, 503, 504):
+                    logger.warning(
+                        f"OSRM transient status {resp.status_code} on attempt {attempt + 1}/{max_retries}"
+                    )
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(0.4 * (2 ** attempt))
+                else:
+                    return resp
+            except (httpx.TimeoutException, httpx.RequestError) as e:
+                logger.warning(f"OSRM connection error on attempt {attempt + 1}/{max_retries}: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(0.4 * (2 ** attempt))
+        return None
 
     async def _fetch_osrm_routes(
         self,
@@ -146,19 +194,21 @@ class RoutingService:
         routes: List[dict] = []
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.get(url, params={
+                resp = await self._get_with_retry(client, url, params={
                     "overview": "full",
                     "geometries": "geojson",
                     "alternatives": "true",
                     "steps": "false",
                     "continue_straight": "true"
                 })
-                if resp.status_code == 200:
+                if resp and resp.status_code == 200:
                     data = resp.json()
                     if data.get("code") == "Ok":
                         routes = data.get("routes", [])
+                elif resp:
+                    logger.warning(f"OSRM returned status {resp.status_code}")
                 else:
-                    logger.warning(f"OSRM returned {resp.status_code}")
+                    logger.warning("OSRM request failed after retries")
         except httpx.TimeoutException:
             raise HTTPException(status_code=504, detail="Routing service timed out.")
         except Exception as e:
@@ -241,8 +291,8 @@ class RoutingService:
                 w_lat, w_lon = raw_w_lat, raw_w_lon
                 road_name = "parallel corridor"
                 try:
-                    snap_res = await client.get(snap_url, params={"number": "1"})
-                    if snap_res.status_code == 200:
+                    snap_res = await self._get_with_retry(client, snap_url, params={"number": "1"}, max_retries=2)
+                    if snap_res and snap_res.status_code == 200:
                         snap_data = snap_res.json()
                         wps = snap_data.get("waypoints", [])
                         if wps:
@@ -256,13 +306,13 @@ class RoutingService:
                 synth_url = f"{self.osrm_base_url}/route/v1/driving/{path_str}"
 
                 try:
-                    resp = await client.get(synth_url, params={
+                    resp = await self._get_with_retry(client, synth_url, params={
                         "overview": "full",
                         "geometries": "geojson",
                         "steps": "false",
                         "continue_straight": "true"
-                    })
-                    if resp.status_code == 200:
+                    }, max_retries=2)
+                    if resp and resp.status_code == 200:
                         d = resp.json()
                         if d.get("code") == "Ok" and d.get("routes"):
                             cand = d["routes"][0]

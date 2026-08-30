@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MapPin, Navigation, Search, Loader2, Plus, Minus, GripVertical, SlidersHorizontal, ShieldAlert } from 'lucide-react';
+import { MapPin, Navigation, Search, Loader2, Plus, Minus, GripVertical, SlidersHorizontal, ShieldAlert, Truck } from 'lucide-react';
 
 const DISASTER_MODES = [
   { id: 'ALL_HAZARDS', label: 'All Hazards', desc: 'Composite multi-hazard risk model' },
@@ -7,6 +7,13 @@ const DISASTER_MODES = [
   { id: 'FLOOD_HURRICANE', label: 'Flood / Surge', desc: 'Prioritizes FEMA floodplains, low elevations and scour' },
   { id: 'EARTHQUAKE', label: 'Earthquake', desc: 'Prioritizes seismic PGA and bridge structure ratings' },
   { id: 'LANDSLIDE', label: 'Landslide', desc: 'Prioritizes slope gradients and USGS susceptibility' },
+];
+
+const VEHICLE_PROFILES = [
+  { id: 'STANDARD_VEHICLE', label: '🚗 Standard', desc: 'Passenger cars & SUVs (default parameters)' },
+  { id: 'EMERGENCY_BUS', label: '🚌 Evac Bus', desc: 'High-occupancy buses (10% max slope, bridge weight sensitivity)' },
+  { id: 'RESCUE_4X4', label: '🚙 4x4 Rescue', desc: 'High-clearance 4x4 (high slope tolerance up to 25%)' },
+  { id: 'HEAVY_SUPPLY', label: '🚛 Heavy Supply', desc: 'Supply & fuel tankers (8% max slope, strict bridge capacity)' },
 ];
 
 export default function LocationInput({
@@ -20,6 +27,8 @@ export default function LocationInput({
   setSampleInterval,
   disasterType = 'ALL_HAZARDS',
   setDisasterType,
+  vehicleProfile = 'STANDARD_VEHICLE',
+  setVehicleProfile,
   onAnalyze,
   loading,
   pickerMode,
@@ -121,6 +130,39 @@ export default function LocationInput({
                   }`}
                 >
                   <span className="block truncate">{mode.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Vehicle Fleet Profile Selector */}
+        <div className="space-y-1.5 pb-1 border-t border-zinc-800/60 pt-2">
+          <div className="flex items-center justify-between text-[11px] font-mono">
+            <span className="text-zinc-400 flex items-center gap-1">
+              <Truck className="h-3 w-3 text-emerald-400" />
+              <span>VEHICLE FLEET PROFILE</span>
+            </span>
+            <span className="text-[10px] text-zinc-500">
+              {VEHICLE_PROFILES.find(v => v.id === vehicleProfile)?.label || 'Standard'}
+            </span>
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {VEHICLE_PROFILES.map((veh) => {
+              const active = vehicleProfile === veh.id;
+              return (
+                <button
+                  key={veh.id}
+                  type="button"
+                  onClick={() => setVehicleProfile && setVehicleProfile(veh.id)}
+                  title={veh.desc}
+                  className={`py-1.5 px-1 rounded text-center font-mono text-[10px] transition-all cursor-pointer border ${
+                    active
+                      ? 'bg-emerald-950 border-emerald-500 text-emerald-200 font-bold shadow-sm'
+                      : 'bg-zinc-950/70 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80'
+                  }`}
+                >
+                  <span className="block truncate">{veh.label}</span>
                 </button>
               );
             })}

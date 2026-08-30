@@ -3,6 +3,7 @@ import sqlite3
 import math
 import logging
 import time
+from datetime import datetime
 from typing import List, Dict, Optional, Any
 from app.utils.geo import haversine_distance
 
@@ -170,7 +171,7 @@ class NBIService:
                         if dist <= radius_m:
                             b_dict = dict(r)
                             b_dict["distance_to_sample_m"] = round(dist, 1)
-                            current_year = 2026
+                            current_year = datetime.now().year
                             year_built = b_dict.get("year_built")
                             b_dict["age_years"] = (current_year - year_built) if year_built else None
 
@@ -226,7 +227,7 @@ class NBIService:
 
         struct_num = (h % 89999) + 10000
         year_built = 1960 + (h % 58)  # 1960 - 2018
-        current_year = 2026
+        current_year = datetime.now().year
         age_years = current_year - year_built
 
         deck_val = h % 10

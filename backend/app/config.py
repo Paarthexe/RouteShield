@@ -21,9 +21,17 @@ class Settings(BaseSettings):
     # Cache settings
     CACHE_DB_PATH: str = "./data/routeshield_cache.db"
     ENABLE_CACHE: bool = True
+    CACHE_TTL_S: int = 3600  # 1 hour default
     
     # Request timeouts in seconds
     HTTP_TIMEOUT_S: float = 10.0
+    
+    # CORS (comma-separated origins, or "*" for development)
+    CORS_ORIGINS: str = "*"
+    
+    # Rate limiting
+    RATE_LIMIT_ANALYZE: str = "30/minute"
+    RATE_LIMIT_DEFAULT: str = "120/minute"
     
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),

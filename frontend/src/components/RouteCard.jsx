@@ -201,6 +201,54 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
         </div>
       )}
 
+      {/* Road Capacity & Dead Zones Telemetry */}
+      <div className="mb-2 space-y-1">
+        {route.road_capacity && (
+          <div className="py-1 px-2.5 bg-slate-950/80 border border-slate-800 rounded-lg text-[11px] flex items-center justify-between font-mono">
+            <span className="text-slate-400">Road Capacity</span>
+            <span className="text-emerald-400 font-bold">
+              ~{route.road_capacity.estimated_throughput_veh_hr?.toLocaleString()} veh/hr ({route.road_capacity.avg_lanes} avg lanes)
+            </span>
+          </div>
+        )}
+        {route.comm_dead_zones && route.comm_dead_zones.length > 0 && (
+          <div className="py-1 px-2.5 bg-purple-950/40 border border-purple-800/60 rounded-lg text-[11px] flex items-center justify-between font-mono">
+            <span className="text-purple-300 flex items-center gap-1">
+              <span>📡</span> RF Dead Zone
+            </span>
+            <span className="text-purple-300 font-bold">
+              {route.comm_dead_zones.reduce((acc, d) => acc + d.length_km, 0).toFixed(1)} km total
+            </span>
+          </div>
+        )}
+        {route.aar_case_studies && route.aar_case_studies.length > 0 && (
+          <div className="py-1 px-2.5 bg-amber-950/50 border border-amber-800/80 rounded-lg text-[11px] flex items-center justify-between font-mono">
+            <span className="text-amber-300 flex items-center gap-1">
+              <span>📜</span> Historic AAR Failure Zone
+            </span>
+            <span className="text-amber-300 font-bold">
+              {route.aar_case_studies[0].incident_name} ({route.aar_case_studies[0].year})
+            </span>
+          </div>
+        )}
+        {route.time_cutoff && route.time_cutoff.time_to_cutoff_min && (
+          <div className={`py-1 px-2.5 rounded-lg text-[11px] flex items-center justify-between font-mono border ${
+            route.time_cutoff.time_to_cutoff_min <= 30
+              ? 'bg-rose-950/70 border-rose-700 text-rose-300'
+              : route.time_cutoff.time_to_cutoff_min <= 60
+              ? 'bg-amber-950/60 border-amber-700 text-amber-300'
+              : 'bg-yellow-950/40 border-yellow-800/60 text-yellow-300'
+          }`}>
+            <span className="flex items-center gap-1 font-bold">
+              <span>⏱️</span> TTC: {route.time_cutoff.time_to_cutoff_min} min
+            </span>
+            <span className="font-bold">
+              Cutoff @ Mile {(route.time_cutoff.intercept_distance_km * 0.621371).toFixed(1)}
+            </span>
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center justify-between pt-1">
         <span className="text-xs text-slate-400">
           {statusKey === 'PRIMARY' ? 'Recommended Evacuation Corridor' :

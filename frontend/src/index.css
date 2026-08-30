@@ -65,6 +65,7 @@ code, pre, .font-mono {
 .leaflet-control-zoom a:hover {
   background-color: #27272a !important;
   color: #ffffff !important;
+  border-color: #3f3f46 !important;
 }
 
 .leaflet-bar {
@@ -80,4 +81,36 @@ code, pre, .font-mono {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Print / PDF Briefing Stylesheet */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  header, .print\:hidden, button, input, select {
+    display: none !important;
+  }
+
+  .bg-zinc-900, .bg-zinc-950, .bg-slate-900, .bg-slate-950 {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    border-color: #cccccc !important;
+    box-shadow: none !important;
+  }
+
+  .text-zinc-100, .text-zinc-200, .text-zinc-300, .text-slate-100, .text-slate-200 {
+    color: #000000 !important;
+  }
+
+  .text-zinc-400, .text-zinc-500, .text-slate-400, .text-slate-500 {
+    color: #444444 !important;
+  }
+
+  .leaflet-container {
+    height: 400px !important;
+    page-break-after: always;
+  }
 }

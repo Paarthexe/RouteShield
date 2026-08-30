@@ -9,12 +9,17 @@ BSI_CRITICAL = 0.70
 BSI_MODERATE = 0.40
 
 
-def _bridge_vulnerability(sample: RouteSample, disaster_type: str = "ALL_HAZARDS") -> float:
+def _bridge_vulnerability(
+    sample: RouteSample,
+    disaster_type: str = "ALL_HAZARDS",
+    vehicle_profile: str = "STANDARD_VEHICLE"
+) -> float:
     """
     Compute bridge vulnerability score for a sample point across all FHWA NBI
     component ratings (Item 58 Deck, 59 Superstructure, 60 Substructure,
     61 Channel Scour, 62 Culvert) plus Sufficiency Rating (Item 66).
-    Returns 0.0 (no bridge) to 2.2 (critically deficient structure).
+    Modulated by active disaster and vehicle fleet profile.
+    Returns 0.0 (no bridge) to 2.5 (critically deficient structure for vehicle type).
     """
     bridges = sample.nbi_bridges or []
     if not bridges:
@@ -71,27 +76,70 @@ def _bridge_vulnerability(sample: RouteSample, disaster_type: str = "ALL_HAZARDS
         elif disaster_type == "FLOOD_HURRICANE" and (parse_cond(channel_cond) or 9.0) <= 5:
             disaster_boost = 0.3  # Scour critical channel vulnerability
 
+        # Vehicle Profile Specific Bridge Sensitivity
+        vehicle_boost = 0.0
+        if vehicle_profile == "EMERGENCY_BUS":
+            # High axle weight and passenger load
+            if min_cond <= 5 or (suff is not None and suff < 65.0):
+                vehicle_boost = 0.45
+        elif vehicle_profile == "HEAVY_SUPPLY":
+            # Heavy tanker / freight truck load rating sensitivity
+            if min_cond <= 6 or (suff is not None and suff < 75.0) or (age and age > 40):
+                vehicle_boost = 0.65
+        elif vehicle_profile == "RESCUE_4X4":
+            # Agile high-clearance vehicle is less sensitive to minor structural deflection
+            vehicle_boost = -0.15
+
         if min_cond <= 4 or b.get("structurally_deficient") is True:
-            vuln = 1.8 + age_penalty + suff_penalty + disaster_boost
+            vuln = 1.8 + age_penalty + suff_penalty + disaster_boost + vehicle_boost
         elif min_cond <= 6:
-            vuln = 0.7 + age_penalty + suff_penalty + disaster_boost
+            vuln = 0.7 + age_penalty + suff_penalty + disaster_boost + vehicle_boost
         elif min_cond <= 9:
-            vuln = 0.1
+            vuln = max(0.05, 0.1 + vehicle_boost)
         else:
-            vuln = 0.3
+            vuln = max(0.1, 0.3 + vehicle_boost)
 
         worst = max(worst, vuln)
 
-    return min(worst, 2.2)
+    return max(0.0, min(worst, 2.5))
 
 
-def _terrain_penalty(slope_pct: float) -> float:
+def _terrain_penalty(slope_pct: float, vehicle_profile: str = "STANDARD_VEHICLE") -> float:
     """
-    Terrain penalty based on slope grade.
-    Flat / standard highway grade (0-6%) = 1.0, moderate grade (6-10%) = 1.15,
-    steep mountain grade (10-18%) = 1.4, extreme grade (>18%) = 1.7
+    Terrain penalty based on slope grade and vehicle capabilities.
+    - Standard car: Flat (0-6%) = 1.0, moderate (6-10%) = 1.15, steep (10-18%) = 1.4, extreme (>18%) = 1.7
+    - Emergency Bus: Extreme penalty above 10% grade (>10% = 1.9, >14% = 2.4)
+    - Rescue 4x4: High tolerance (up to 18% = 1.0, >18% = 1.25)
+    - Heavy Supply: Strict limit above 8% grade (>8% = 1.8, >12% = 2.3)
     """
     abs_slope = abs(slope_pct) if slope_pct is not None else 0.0
+
+    if vehicle_profile == "EMERGENCY_BUS":
+        if abs_slope > 14.0:
+            return 2.4
+        elif abs_slope > 10.0:
+            return 1.9
+        elif abs_slope > 6.0:
+            return 1.35
+        return 1.0
+
+    elif vehicle_profile == "HEAVY_SUPPLY":
+        if abs_slope > 12.0:
+            return 2.3
+        elif abs_slope > 8.0:
+            return 1.8
+        elif abs_slope > 5.0:
+            return 1.3
+        return 1.0
+
+    elif vehicle_profile == "RESCUE_4X4":
+        if abs_slope > 22.0:
+            return 1.35
+        elif abs_slope > 16.0:
+            return 1.18
+        return 1.0
+
+    # Default STANDARD_VEHICLE
     if abs_slope > 18.0:
         return 1.7
     elif abs_slope > 10.0:
@@ -302,13 +350,23 @@ def _hazard_risk(sample: RouteSample, disaster_type: str = "ALL_HAZARDS") -> flo
         if dam_hazard == "High" and dam_dist and dam_dist < 2000.0:
             risk += 0.15
 
+    # -------------------------------------------------------------
+    # Check Active Roadblock / Hazard Barrier
+    # -------------------------------------------------------------
+    if sample.is_barrier_blocked:
+        return 1.0  # Impassable barrier
+
     return min(risk, 1.0)
 
 
 
-def analyze_route_bottlenecks(route: Route, disaster_type: str = "ALL_HAZARDS") -> Tuple[List[BottleneckInfo], Route]:
+def analyze_route_bottlenecks(
+    route: Route,
+    disaster_type: str = "ALL_HAZARDS",
+    vehicle_profile: str = "STANDARD_VEHICLE"
+) -> Tuple[List[BottleneckInfo], Route]:
     """
-    Analyze all sample points in a route to identify bottlenecks under active disaster.
+    Analyze all sample points in a route to identify bottlenecks under active disaster and vehicle profile.
     Returns (list of bottlenecks, updated route with hazard_score on samples).
     """
     bottlenecks: List[BottleneckInfo] = []
@@ -316,29 +374,40 @@ def analyze_route_bottlenecks(route: Route, disaster_type: str = "ALL_HAZARDS") 
 
     for sample in route.samples:
         h_risk = _hazard_risk(sample, disaster_type=disaster_type)
-        b_vuln = _bridge_vulnerability(sample, disaster_type=disaster_type)
-        t_penalty = _terrain_penalty(sample.slope_pct)
+        b_vuln = _bridge_vulnerability(sample, disaster_type=disaster_type, vehicle_profile=vehicle_profile)
+        t_penalty = _terrain_penalty(sample.slope_pct, vehicle_profile=vehicle_profile)
 
-        bsi = h_risk * (1.0 + b_vuln) * t_penalty
+        # Barrier block forces catastrophic BSI
+        if sample.is_barrier_blocked:
+            bsi = 2.5
+            h_risk = 1.0
+        else:
+            bsi = h_risk * (1.0 + b_vuln) * t_penalty
 
         sample.hazard_score = round(h_risk, 3)
         updated_samples.append(sample)
 
-        if bsi >= BSI_MODERATE:
-            if bsi >= BSI_CRITICAL:
+        if bsi >= BSI_MODERATE or sample.is_barrier_blocked:
+            if bsi >= BSI_CRITICAL or sample.is_barrier_blocked:
                 severity = "Critical"
             else:
                 severity = "Moderate"
 
             desc_parts = []
+
+            if sample.is_barrier_blocked:
+                desc_parts.append("IMPASSABLE ROADBLOCK / ACTIVE HAZARD BARRIER")
+
             if b_vuln > 1.5:
                 bridges = sample.nbi_bridges or []
                 bridge_ids = [b.get("structure_id", "Unknown") for b in bridges[:2]]
-                desc_parts.append(f"Poor-condition bridge(s) {', '.join(bridge_ids)}")
+                desc_parts.append(f"Deficient bridge structure(s) {', '.join(bridge_ids)} (High risk for {vehicle_profile.replace('_', ' ').lower()})")
+            elif b_vuln > 0.6 and vehicle_profile in ("EMERGENCY_BUS", "HEAVY_SUPPLY"):
+                desc_parts.append(f"Aging bridge capacity restriction for {vehicle_profile.replace('_', ' ').lower()}")
             elif b_vuln > 0.5:
                 desc_parts.append("Aging/fair-condition bridge infrastructure")
 
-            if h_risk > 0.3:
+            if h_risk > 0.3 and not sample.is_barrier_blocked:
                 risk_factors = []
                 mireye = sample.mireye_data or {}
 
@@ -348,9 +417,14 @@ def analyze_route_bottlenecks(route: Route, disaster_type: str = "ALL_HAZARDS") 
                     sdc = mireye.get("seismic_design_category", "")
                     risk_factors.append(f"seismic PGA {pga:.2f}g (SDC {sdc})" if sdc else f"seismic PGA {pga:.2f}g")
 
-                # Slope
-                if sample.slope_pct and abs(sample.slope_pct) > 8:
-                    risk_factors.append(f"steep grade {abs(sample.slope_pct):.1f}%")
+                # Slope & Vehicle Profile Warnings
+                abs_slope = abs(sample.slope_pct) if sample.slope_pct is not None else 0.0
+                if vehicle_profile == "EMERGENCY_BUS" and abs_slope > 10.0:
+                    risk_factors.append(f"severe {abs_slope:.1f}% slope exceeds bus operating ceiling (10%)")
+                elif vehicle_profile == "HEAVY_SUPPLY" and abs_slope > 8.0:
+                    risk_factors.append(f"{abs_slope:.1f}% slope exceeds heavy supply grade limit (8%)")
+                elif sample.slope_pct and abs_slope > 8.0:
+                    risk_factors.append(f"steep grade {abs_slope:.1f}%")
 
                 # FEMA flood zone
                 flood_zone = mireye.get("fema_flood_zone", "")
@@ -380,7 +454,6 @@ def analyze_route_bottlenecks(route: Route, disaster_type: str = "ALL_HAZARDS") 
                 fhsz = mireye.get("fire_hazard_zone")
                 burn_year = mireye.get("most_recent_burn_year")
                 fire_dist = mireye.get("nearest_fire_perimeter_m", float("inf"))
-                abs_slope = abs(sample.slope_pct) if sample.slope_pct is not None else 0.0
 
                 if disaster_type == "WILDFIRE" and (fhsz or fire_dist < 2000.0) and abs_slope > 10.0:
                     risk_factors.append(f"Post-wildfire debris flow risk ({fhsz or 'burn area'} + {abs_slope:.1f}% slope)")
@@ -403,8 +476,8 @@ def analyze_route_bottlenecks(route: Route, disaster_type: str = "ALL_HAZARDS") 
                     risk_factors.append(f"co-seismic rockfall hazard (PGA {pga:.2f}g + {abs_slope:.1f}% slope)")
                 elif disaster_type != "WILDFIRE" and ls and ls >= 40:
                     risk_factors.append(f"landslide susceptibility {ls}/100")
-                elif disaster_type != "WILDFIRE" and sample.slope_pct and abs(sample.slope_pct) > 10:
-                    risk_factors.append(f"steep grade {abs(sample.slope_pct):.1f}%")
+                elif disaster_type != "WILDFIRE" and sample.slope_pct and abs_slope > 10:
+                    risk_factors.append(f"steep grade {abs_slope:.1f}%")
 
                 # Dam
                 dam_dist = mireye.get("nearest_dam_distance_m")
@@ -419,8 +492,8 @@ def analyze_route_bottlenecks(route: Route, disaster_type: str = "ALL_HAZARDS") 
                 if risk_factors:
                     desc_parts.append(f"Hazard factors: {', '.join(risk_factors)}")
 
-            if t_penalty > 1.2 and disaster_type != "WILDFIRE":
-                desc_parts.append(f"Terrain grade penalty {t_penalty:.1f}x")
+            if t_penalty > 1.2 and disaster_type != "WILDFIRE" and not sample.is_barrier_blocked:
+                desc_parts.append(f"Terrain grade penalty {t_penalty:.1f}x ({vehicle_profile.replace('_', ' ').lower()})")
 
             description = ". ".join(desc_parts) if desc_parts else f"BSI {bsi:.2f} detected"
 
@@ -437,12 +510,11 @@ def analyze_route_bottlenecks(route: Route, disaster_type: str = "ALL_HAZARDS") 
                 description=description
             ))
 
-
     route.samples = updated_samples
     route.bottlenecks = bottlenecks
 
     logger.info(
-        f"Route {route.route_id} [{disaster_type}]: {len(bottlenecks)} bottlenecks detected "
+        f"Route {route.route_id} [{disaster_type} | {vehicle_profile}]: {len(bottlenecks)} bottlenecks detected "
         f"({sum(1 for b in bottlenecks if b.severity_label == 'Critical')} critical)"
     )
 

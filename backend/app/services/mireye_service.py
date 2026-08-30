@@ -190,7 +190,8 @@ class MireyeDataService:
 
         try:
             logger.info(f"Mireye /v1/ask request at lat={lat:.4f}, lon={lon:.4f}: '{question[:60]}...'")
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            ask_timeout = max(25.0, self.timeout * 2.0)
+            async with httpx.AsyncClient(timeout=ask_timeout) as client:
                 resp = await client.post(
                     f"{self.base_url}/ask",
                     headers=self._headers(),

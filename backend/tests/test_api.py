@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from app.main import app
-from app.models.route_models import Location, Route, GeoJSONLineString, RouteSample
+from app.models.route_models import Location, Route, GeoJSONLineString, RouteSample, AgentDecision
 
 client = TestClient(app)
 
@@ -11,11 +11,11 @@ def test_health_endpoint():
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
-    assert "Stage 1A" in data["stage"]
+    assert "subsystems" in data
 
 @patch("app.services.geocoding.geocoding_service.resolve_location")
-@patch("app.services.routing.routing_service.generate_candidate_routes")
-def test_analyze_endpoint_e2e(mock_routing, mock_geocoding):
+@patch("app.services.routing.routing_service.generate_and_analyze")
+def test_analyze_endpoint_e2e(mock_generate_and_analyze, mock_geocoding):
     mock_geocoding.side_effect = lambda query: Location(
         query=query,
         latitude=28.6430 if "Station" in query else 28.5562,
@@ -49,7 +49,14 @@ def test_analyze_endpoint_e2e(mock_routing, mock_geocoding):
         ]
     )
 
-    mock_routing.return_value = [mock_route]
+    mock_decision = AgentDecision(
+        primary_route_id="route_1",
+        executive_summary="Test summary",
+        disaster_type="ALL_HAZARDS",
+    )
+
+    # generate_and_analyze returns (routes, agent_decision) tuple
+    mock_generate_and_analyze.return_value = ([mock_route], mock_decision)
 
     payload = {
         "origin": "New Delhi Railway Station",
@@ -66,3 +73,4 @@ def test_analyze_endpoint_e2e(mock_routing, mock_geocoding):
     assert len(data["routes"]) == 1
     assert data["routes"][0]["route_id"] == "route_1"
     assert len(data["routes"][0]["samples"]) == 2
+    assert data["agent_decision"]["primary_route_id"] == "route_1"

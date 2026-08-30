@@ -33,9 +33,14 @@ def risk_model_metadata() -> dict:
     }
 
 
-def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViability:
+def assess_route_viability(
+    route: Route,
+    fastest_duration_s: float,
+    vehicle_profile: str = "STANDARD_VEHICLE"
+) -> RouteViability:
     """
-    Calculate viability score (0-100) for a route and determine its status.
+    Calculate viability score (0-100) for a route and determine its status,
+    enforcing vehicle fleet operating limits and hazard barrier gates.
     """
     samples = route.samples
     bottlenecks = route.bottlenecks
@@ -77,22 +82,46 @@ def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViab
     # --- Rejection Rules ---
     rejection_reasons: List[str] = []
 
+    # 1. Blocked by Active Roadblock / Hazard Barrier
+    blocked_count = sum(1 for s in samples if getattr(s, "is_barrier_blocked", False))
+    if blocked_count > 0:
+        rejection_reasons.append(
+            f"Corridor intersects active roadblock / hazard barrier exclusion zone ({blocked_count} sample points blocked)"
+        )
+
+    # 2. Catastrophic Bottleneck Threshold
     if max_bsi >= REJECT_BSI_THRESHOLD:
         rejection_reasons.append(
             f"Contains catastrophic bottleneck (BSI {max_bsi:.2f} >= {REJECT_BSI_THRESHOLD:.2f})"
         )
 
+    # 3. Excessive Critical Bottlenecks Density
     if critical_bottleneck_pct >= REJECT_CRITICAL_BOTTLENECK_PCT and critical_bottleneck_count >= 2:
         rejection_reasons.append(
             f"Excessive critical bottleneck density ({critical_bottleneck_pct:.0%} of corridor flagged critical - {critical_bottleneck_count}/{total_samples} samples)"
         )
 
+    # 4. Severe Hazard Length
     high_hazard_count = sum(1 for s in samples if (s.hazard_score or 0) > 0.5)
     high_hazard_pct = high_hazard_count / total_samples
     if high_hazard_pct > REJECT_HAZARD_EXPOSURE_PCT:
         rejection_reasons.append(
             f"Excessive severe hazard exposure ({high_hazard_pct:.0%} of corridor above 0.50 threshold)"
         )
+
+    # 5. Vehicle Profile Specific Safety Gates
+    if vehicle_profile == "EMERGENCY_BUS":
+        steep_bus_samples = sum(1 for s in samples if s.slope_pct and abs(s.slope_pct) > 12.0)
+        if steep_bus_samples >= 2:
+            rejection_reasons.append(
+                f"Sustained terrain gradient exceeds safe evacuation bus operating limit (12% max grade)"
+            )
+    elif vehicle_profile == "HEAVY_SUPPLY":
+        steep_truck_samples = sum(1 for s in samples if s.slope_pct and abs(s.slope_pct) > 10.0)
+        if steep_truck_samples >= 2:
+            rejection_reasons.append(
+                f"Sustained grade exceeds heavy supply/tanker transport limit (10% max grade)"
+            )
 
     status = "REJECTED" if rejection_reasons else "CANDIDATE"
 
@@ -110,7 +139,7 @@ def assess_route_viability(route: Route, fastest_duration_s: float) -> RouteViab
     route.viability_score = score
 
     logger.info(
-        f"Route {route.route_id}: Viability={score:.1f}, "
+        f"Route {route.route_id} [{vehicle_profile}]: Viability={score:.1f}, "
         f"Status={status}, Bottlenecks={bottleneck_count} "
         f"(Critical={critical_bottleneck_count}, {critical_bottleneck_pct:.1%}), "
         f"HazardExposure={hazard_exposure_pct:.1%}"

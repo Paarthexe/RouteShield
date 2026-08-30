@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "vite build",
+    "lint": "echo 'No linter configured'",
     "preview": "vite preview"
   },
   "dependencies": {

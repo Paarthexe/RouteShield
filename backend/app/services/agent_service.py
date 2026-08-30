@@ -1,12 +1,13 @@
 import logging
 from typing import List, Optional
-from app.models.route_models import Route, AgentDecision, AgentStep, Location
+from app.models.route_models import Route, AgentDecision, AgentStep, Location, HazardBarrier
 from app.services.bottleneck_service import analyze_route_bottlenecks
 from app.services.redundancy_service import select_independent_backup
 from app.services.viability_service import assess_route_viability, rank_routes, risk_model_metadata
 from app.services.mireye_service import mireye_data_service
 from app.services.nbi_service import nbi_service
 from app.services.segmentation_service import segmentation_service
+from app.services.aar_service import aar_service
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,9 @@ async def run_agent_analysis(
     routes: List[Route],
     origin: Location,
     destination: Location,
-    disaster_type: str = "ALL_HAZARDS"
+    disaster_type: str = "ALL_HAZARDS",
+    vehicle_profile: str = "STANDARD_VEHICLE",
+    hazard_barriers: Optional[List[HazardBarrier]] = None
 ) -> AgentDecision:
     """
     Agentic decision engine: orchestrates bottleneck analysis, viability scoring,
@@ -29,10 +32,12 @@ async def run_agent_analysis(
     # --- Step 1: Log corridor count ---
     step_num += 1
     disaster_label = disaster_type.replace("_", " ").title()
+    vehicle_label = vehicle_profile.replace("_", " ").title()
+    barrier_note = f" (evaluating {len(hazard_barriers)} active hazard barriers)" if hazard_barriers else ""
     steps.append(AgentStep(
         step_number=step_num,
         action="Corridor Intake",
-        detail=f"Received {len(routes)} candidate evacuation corridors from {origin.display_name} to {destination.display_name} under {disaster_label} mode"
+        detail=f"Received {len(routes)} candidate evacuation corridors from {origin.display_name} to {destination.display_name} under {disaster_label} mode for {vehicle_label}{barrier_note}"
     ))
 
     # --- Step 2: Bottleneck & Segment Analysis ---
@@ -40,7 +45,11 @@ async def run_agent_analysis(
     total_bottlenecks = 0
     total_critical = 0
     for route in routes:
-        bottlenecks, route = analyze_route_bottlenecks(route, disaster_type=disaster_type)
+        bottlenecks, route = analyze_route_bottlenecks(
+            route,
+            disaster_type=disaster_type,
+            vehicle_profile=vehicle_profile
+        )
         route.segments = segmentation_service.segment_route(route)
         total_bottlenecks += len(bottlenecks)
         total_critical += sum(1 for b in bottlenecks if b.severity_label == "Critical")
@@ -48,14 +57,18 @@ async def run_agent_analysis(
     steps.append(AgentStep(
         step_number=step_num,
         action="Bottleneck Detection",
-        detail=f"Identified {total_bottlenecks} hazard-infrastructure bottlenecks across all corridors ({total_critical} critical) calibrated for {disaster_label}"
+        detail=f"Identified {total_bottlenecks} hazard-infrastructure bottlenecks across all corridors ({total_critical} critical) calibrated for {disaster_label} and {vehicle_label}"
     ))
 
     # --- Step 3: Viability Scoring ---
     step_num += 1
     fastest_duration = min(r.duration_s for r in routes) if routes else 0
     for route in routes:
-        assess_route_viability(route, fastest_duration)
+        assess_route_viability(
+            route,
+            fastest_duration,
+            vehicle_profile=vehicle_profile
+        )
 
     score_summary = ", ".join(
         f"{r.route_id}: {r.viability.score:.0f}/100" for r in routes if r.viability
@@ -151,7 +164,24 @@ async def run_agent_analysis(
             detail="No severe bottleneck found - Mireye deep probe not required"
         ))
 
-    # --- Step 6: Generate Executive Summary ---
+    # --- Step 6: Real-World Evacuation AAR Cross-Reference ---
+    step_num += 1
+    all_aar_matches = await aar_service.match_all_routes(routes, disaster_type=disaster_type)
+    if all_aar_matches:
+        match_summary = ", ".join(f"{m.incident_name} ({m.year})" for m in all_aar_matches)
+        steps.append(AgentStep(
+            step_number=step_num,
+            action="Historical AAR Matching",
+            detail=f"Corridors intersect {len(all_aar_matches)} documented disaster evacuation case study zones: {match_summary}. Tactical mitigation applied."
+        ))
+    else:
+        steps.append(AgentStep(
+            step_number=step_num,
+            action="Historical AAR Matching",
+            detail="No historical FEMA/NIST catastrophic gridlock zones detected along corridor geometries."
+        ))
+
+    # --- Step 7: Generate Executive Summary ---
     step_num += 1
     executive_summary = _generate_executive_summary(
         routes, primary, backup, rejected, origin, destination, disaster_type=disaster_type
@@ -180,10 +210,12 @@ async def run_agent_analysis(
         backup_independence=backup_independence,
         risk_model=risk_model_metadata(),
         evidence_coverage=_build_evidence_coverage(routes),
-        disaster_type=disaster_type
+        disaster_type=disaster_type,
+        vehicle_profile=vehicle_profile,
+        hazard_barriers=hazard_barriers or []
     )
 
-    logger.info(f"Agent Decision [{disaster_type}]: Primary={decision.primary_route_id}, Backup={decision.backup_route_id}")
+    logger.info(f"Agent Decision [{disaster_type} | {vehicle_profile}]: Primary={decision.primary_route_id}, Backup={decision.backup_route_id}")
     return decision
 
 

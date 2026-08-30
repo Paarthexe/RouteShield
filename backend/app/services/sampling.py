@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from typing import List, Tuple, Set, Dict, Any, Optional
-from app.models.route_models import GeoJSONLineString, RouteSample
+from app.models.route_models import GeoJSONLineString, RouteSample, HazardBarrier
 from app.utils.geo import haversine_distance, interpolate_coordinate
 from app.services.nbi_service import nbi_service
 from app.services.mireye_service import mireye_data_service
@@ -17,7 +17,8 @@ class SamplingService:
         route_id: str,
         geometry: GeoJSONLineString,
         interval_m: float = 500.0,
-        disaster_type: str = "ALL_HAZARDS"
+        disaster_type: str = "ALL_HAZARDS",
+        hazard_barriers: Optional[List[HazardBarrier]] = None
     ) -> List[RouteSample]:
         coords = geometry.coordinates
         if not coords:
@@ -34,6 +35,13 @@ class SamplingService:
                 combined_facts["elevation_m"] = om_data["elevation_m"]
                 combined_facts["elevation_source"] = om_data["elevation_source"]
 
+            is_blocked = False
+            if hazard_barriers:
+                for b in hazard_barriers:
+                    if haversine_distance(lat, lon, b.latitude, b.longitude) <= b.radius_m:
+                        is_blocked = True
+                        break
+
             return [
                 RouteSample(
                     sample_id=f"{route_id}_sample_001",
@@ -43,7 +51,8 @@ class SamplingService:
                     distance_from_origin_m=0.0,
                     nbi_bridges=nbi_service.get_nearby_bridges(lat, lon, radius_m=300.0),
                     mireye_data=combined_facts if combined_facts else None,
-                    is_mireye_probed=False
+                    is_mireye_probed=False,
+                    is_barrier_blocked=is_blocked
                 )
             ]
 
@@ -149,7 +158,6 @@ class SamplingService:
             for idx in low_elev_indices
         ]
 
-
         all_tasks = mireye_tasks + flood_tasks
         if all_tasks:
             results = await asyncio.gather(*all_tasks, return_exceptions=True)
@@ -160,8 +168,6 @@ class SamplingService:
                         if idx not in mireye_results:
                             mireye_results[idx] = data
                         else:
-                            # Merge flood_risk fields into existing natural_hazard result
-                            # flood_risk fields (fema_flood_zone, coast_distance_m, etc.) take priority
                             for key, val in data.items():
                                 if key not in ("lat", "lng", "fetched_at") and val is not None:
                                     mireye_results[idx][key] = val
@@ -185,7 +191,6 @@ class SamplingService:
             if idx in mireye_results:
                 m_facts = mireye_results[idx]
                 if isinstance(m_facts, dict):
-                    # Mireye elevation overrides Open-Meteo if available
                     for key, val in m_facts.items():
                         if key == "elevation_m" and val is not None:
                             facts["elevation_m"] = val
@@ -194,6 +199,15 @@ class SamplingService:
                             facts[key] = val
                         else:
                             facts[key] = val
+
+            # Check if this point intersects any active hazard barrier
+            is_blocked = False
+            if hazard_barriers:
+                for b in hazard_barriers:
+                    dist_to_b = haversine_distance(lat, lon, b.latitude, b.longitude)
+                    if dist_to_b <= b.radius_m:
+                        is_blocked = True
+                        break
 
             samples.append(
                 RouteSample(
@@ -205,7 +219,8 @@ class SamplingService:
                     nbi_bridges=nbi_results[idx] if nbi_results[idx] else None,
                     mireye_data=facts if facts else None,
                     slope_pct=slopes[idx],
-                    is_mireye_probed=is_probed
+                    is_mireye_probed=is_probed,
+                    is_barrier_blocked=is_blocked
                 )
             )
 

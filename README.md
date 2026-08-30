@@ -13,8 +13,18 @@ It produces a primary route when one is viable, checks whether a separate backup
 - Collects elevation for every sample and calculates route grade.
 - Looks up nearby bridges in the FHWA National Bridge Inventory when the local dataset is available.
 - Probes selected high-value samples for disaster data through Mireye when an API key is configured.
+- Models hazard spread isochrones and computes time-to-cutoff clearance windows for each corridor.
+- Evaluates multi-corridor capacity, shared bottlenecks, and contraflow lane reversals.
+- Estimates affected population exposure and evacuation clearance times using census data.
+- Collects real-time weather conditions and wind vector alignment along routes.
+- Cross-references live NOAA weather alerts and historical FEMA disaster declarations.
+- Locates emergency shelters, hospitals, fire stations, and refueling stops.
+- Identifies communication dead zones in steep canyons and mountain passes.
 - Scores bottlenecks from hazard risk, bridge vulnerability, and terrain.
 - Scores route viability, rejects corridors that cross configured safety limits, and checks backup-route independence.
+- Allocates multi-zone evacuations across distributed destinations to balance network load.
+- Supports vehicle clearance profiles, custom road barriers, and sub-segment rerouting.
+- Streams live corridor re-evaluation updates through Server-Sent Events.
 - Shows the analysis on an interactive map with route cards, elevation profiles, bottleneck markers, sample details, and a decision briefing.
 
 ## Why this matters
@@ -28,22 +38,22 @@ The goal is a decision that can be reviewed quickly without hiding the evidence 
 ## How a route is analysed
 
 ```text
-Origin, destination, waypoints, and disaster mode
-                  |
-                  v
-OSRM route discovery and alternative-corridor synthesis
-                  |
-                  v
-Parallel sampling, elevation lookup, bridge lookup, and targeted hazard probes
-                  |
-                  v
-Bottleneck severity and corridor viability scoring
-                  |
-                  v
-Primary-route selection and independent-backup check
-                  |
-                  v
-Decision summary, map layers, and sample-level evidence
+Origin, destination, waypoints, vehicle profile, and disaster mode
+                                 |
+                                 v
+        OSRM route discovery and alternative-corridor synthesis
+                                 |
+                                 v
+Parallel sampling, elevation, bridge lookup, weather, and hazard probes
+                                 |
+                                 v
+    Bottleneck severity, isochrone time-to-cutoff, and viability scoring
+                                 |
+                                 v
+        Primary-route selection and independent-backup check
+                                 |
+                                 v
+Decision summary, capacity analysis, AAR case studies, and live monitoring
 ```
 
 The active disaster mode changes the emphasis of the scoring and probe selection:
@@ -122,7 +132,7 @@ docker compose up --build
 
 ## Data and service setup
 
-OSRM provides route geometry. Open-Meteo provides elevation data. Mireye provides geocoding and physical-world hazard data.
+OSRM provides route geometry. Open-Meteo provides elevation and real-time weather. Mireye provides geocoding and physical-world hazard data. NOAA and OpenFEMA provide hazard alerts and disaster records. The US Census Bureau provides population data.
 
 ## Tests
 

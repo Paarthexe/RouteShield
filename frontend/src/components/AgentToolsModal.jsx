@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import { X, Cpu, Table, Network, GitBranch, Zap, Database, Shield, Clock, AlertTriangle, ChevronRight } from 'lucide-react';
 
 const PIPELINE_STAGES = [
-  { id: 1, icon: Network, label: 'OSRM Route Generator', desc: 'Generates 1–5 candidate polylines via OpenStreetMap routing', latency: '~200ms', source: 'OSRM (local)' },
+  { id: 1, icon: Network, label: 'OSRM Route Generator', desc: 'Generates 1–5 candidate polylines via OpenStreetMap routing', latency: '~200ms', source: 'OSRM' },
   { id: 2, icon: GitBranch, label: 'Physical Sampler', desc: 'Interpolates RouteSamples at 500m intervals along each polyline', latency: '<5ms', source: 'Internal' },
   { id: 3, icon: Database, label: 'NBI Bridge Fetcher', desc: 'Queries FHWA National Bridge Inventory SQLite (600k+ structures)', latency: '10–40ms', source: 'FHWA NBI' },
   { id: 4, icon: Zap, label: 'Mireye Hazard Fetcher', desc: 'Fetches real-time hazard_score ∈ [0,1] per sample point (US-only)', latency: '80–150ms', source: 'Mireye API' },
-  { id: 5, icon: Shield, label: 'Bottleneck Detector', desc: 'Computes BSI score per sample; labels Critical / Warning / Moderate', latency: '<5ms', source: 'Internal' },
+  { id: 5, icon: Shield, label: 'Bottleneck & Terrain Detector', desc: 'Computes BSI score, slope gradients, and RF dead zones per sample', latency: '<5ms', source: 'Internal' },
   { id: 6, icon: GitBranch, label: 'Segmentation Engine', desc: 'Partitions route into ~4km segments; assigns VIABLE / NEEDS_REPAIR / CRITICAL', latency: '<5ms', source: 'Internal' },
-  { id: 7, icon: Shield, label: 'Viability Assessor', desc: 'Applies rejection gates (BSI≥2.0, density≥35%, hazard>60%); scores 0–100', latency: '<2ms', source: 'Internal' },
-  { id: 8, icon: Cpu, label: 'Decision Engine', desc: 'Ranks corridors; selects PRIMARY + BACKUP; generates trade-off narrative', latency: '<5ms', source: 'Internal' },
+  { id: 7, icon: Shield, label: 'Viability & Exposure Assessor', desc: 'Applies rejection gates; calculates Census population & clearance times', latency: '<2ms', source: 'Internal / ACS' },
+  { id: 8, icon: Cpu, label: 'Decision & AAR Synthesis', desc: 'Ranks corridors; matches live NOAA/FEMA AARs; generates trade-off narrative', latency: '<5ms', source: 'OpenFEMA / NOAA' },
 ];
 
 const REJECTION_GATES = [
@@ -44,6 +44,10 @@ const TOOL_TABLE = [
   { tool: 'Physical Sampler', input: 'LineString, interval_m', output: 'RouteSample[]', failure: 'Empty if single point' },
   { tool: 'NBI Bridge Fetcher', input: 'Lat/Lon per sample', output: 'NBIBridge[]', failure: 'Returns [] out-of-bounds' },
   { tool: 'Mireye Hazard Fetcher', input: 'Lat/Lon per sample', output: 'hazard_score [0–1]', failure: 'Falls back to 0.0' },
+  { tool: 'Open-Meteo DEM & Wind', input: 'Coordinates batch', output: 'Elevation & Wind Vector', failure: 'DEM terrain interpolation fallback' },
+  { tool: 'Census Exposure (ACS)', input: 'Origin Lat/Lon', output: 'Population & ETE Clearance', failure: 'Calculates county density approximation' },
+  { tool: 'Contraflow Simulator', input: 'Multi-corridor lanes', output: 'System Throughput & Gain', failure: 'Base single-lane flow rate' },
+  { tool: 'Live NOAA / FEMA AAR', input: 'Corridor bounding box', output: 'Active Alerts & Case Studies', failure: 'Dynamic FEMA disaster synthesis' },
   { tool: 'Bottleneck Detector', input: 'RouteSample[] enriched', output: 'BottleneckInfo[]', failure: 'Empty below threshold' },
   { tool: 'Segmentation Engine', input: 'Route + samples', output: 'RouteSegment[]', failure: 'Single segment fallback' },
   { tool: 'Viability Assessor', input: 'Route, fastest_duration_s', output: 'ViabilityAssessment', failure: 'Always produces result' },
