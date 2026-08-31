@@ -59,11 +59,15 @@ class GeocodingService:
             return Location(**cached)
 
         if not self.mireye_api_key:
-            logger.error("Mireye API Key is missing. Geocoding requires MIREYE_API_KEY.")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Mireye API key is required for geocoding."
-            )
+            logger.warning("Mireye API Key is missing. Falling back to Nominatim geocoding.")
+            location = await self._nominatim_geocode(clean)
+            if not location:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Could not resolve location: '{clean}'"
+                )
+            cache_service.set(cache_key, location.model_dump())
+            return location
 
         logger.info(f"Resolving location: '{clean}'")
 

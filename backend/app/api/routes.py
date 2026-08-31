@@ -32,6 +32,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/routes", tags=["routes"])
 
 
+def _safe_sync(default, label: str, fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:
+        logger.warning("%s failed during route analysis: %s", label, exc)
+        return default
+
+
+async def _safe_async(default, label: str, coro):
+    try:
+        return await coro
+    except Exception as exc:
+        logger.warning("%s failed during route analysis: %s", label, exc)
+        return default
+
+
 @router.post("/generate", response_model=RouteGenerateResponse)
 async def generate_routes(payload: RouteGenerateRequest):
     routes = await routing_service.generate_candidate_routes(
@@ -112,41 +128,34 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
 
     # 2. Enrich routes with Tier 2 per-corridor intelligence (dead zones, fuel stops)
     for r in routes:
-        connectivity_service.detect_communication_dead_zones(r)
-        fuel_service.evaluate_route_refueling(r)
+        _safe_sync(None, "Connectivity analysis", connectivity_service.detect_communication_dead_zones, r)
+        _safe_sync(None, "Fuel analysis", fuel_service.evaluate_route_refueling, r)
 
     # 3. Concurrent retrieval of Tier 1 intelligence: weather, population exposure, capacity analysis, incidents, shelters
-    weather_task = weather_service.get_route_weather_snapshot(
+    weather_task = _safe_async(None, "Weather snapshot", weather_service.get_route_weather_snapshot(
         origin_coord.latitude, origin_coord.longitude,
         dest_coord.latitude, dest_coord.longitude
-    )
-    population_task = population_service.estimate_evacuation_exposure(
+    ))
+    population_task = _safe_async(None, "Population exposure", population_service.estimate_evacuation_exposure(
         origin_coord.latitude, origin_coord.longitude
-    )
-    incidents_task = incident_service.get_historical_incidents(
+    ))
+    incidents_task = _safe_async([], "Historical incidents", incident_service.get_historical_incidents(
         origin_coord.latitude, origin_coord.longitude, disaster_type=disaster_mode
-    )
-    shelters_task = poi_service.find_corridor_shelters_and_pois(routes)
+    ))
+    shelters_task = _safe_async([], "Shelter/POI search", poi_service.find_corridor_shelters_and_pois(routes))
 
-    # Execute async tasks concurrently with safe error capturing
-    weather_res, pop_res, incidents_res, shelters_res = await asyncio.gather(
-        weather_task, population_task, incidents_task, shelters_task,
-        return_exceptions=True
+    weather_snapshot, population_exposure, historical_incidents, shelters = await asyncio.gather(
+        weather_task, population_task, incidents_task, shelters_task
     )
-
-    weather_snapshot = weather_res if not isinstance(weather_res, Exception) else None
-    population_exposure = pop_res if not isinstance(pop_res, Exception) else None
-    historical_incidents = incidents_res if not isinstance(incidents_res, Exception) else []
-    shelters = shelters_res if not isinstance(shelters_res, Exception) else []
 
     # Network-wide road capacity & contraflow evaluation
-    network_capacity = capacity_service.analyze_network_capacity(routes)
+    network_capacity = _safe_sync(None, "Capacity analysis", capacity_service.analyze_network_capacity, routes)
 
     # Match real-world FEMA / NIST After-Action Report bottleneck records
-    all_aar_studies = await aar_service.match_all_routes(routes, disaster_type=disaster_mode)
+    all_aar_studies = await _safe_async([], "AAR matching", aar_service.match_all_routes(routes, disaster_type=disaster_mode))
 
     # Dynamic Hazard Isochrone & Time-to-Cutoff (TTC) Propagation
-    hazard_isochrones = isochrone_service.evaluate_all_routes(
+    hazard_isochrones = _safe_sync([], "Isochrone propagation", isochrone_service.evaluate_all_routes,
         routes, disaster_type=disaster_mode, weather=weather_snapshot
     )
     primary_ttc = routes[0].time_cutoff if routes and routes[0].time_cutoff else None

@@ -1,6 +1,6 @@
 """Route overlap and backup-independence checks for evacuation corridors."""
 
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Optional, Set, Tuple
 
 from app.models.route_models import BackupIndependence, Route
 from app.utils.geo import haversine_distance
@@ -16,7 +16,7 @@ def _route_points(route: Route) -> List[Tuple[float, float]]:
     return [(lat, lon) for lon, lat in route.geometry.coordinates]
 
 
-def _bridge_ids(route: Route) -> set[str]:
+def _bridge_ids(route: Route) -> Set[str]:
     return {
         str(bridge["structure_id"])
         for sample in route.samples
@@ -76,7 +76,10 @@ def assess_backup_independence(primary: Route, candidate: Route) -> BackupIndepe
     )
 
 
-def select_independent_backup(primary: Route, routes: Iterable[Route]) -> tuple[Route | None, BackupIndependence | None]:
+def select_independent_backup(
+    primary: Route,
+    routes: Iterable[Route]
+) -> Tuple[Optional[Route], Optional[BackupIndependence]]:
     """Choose the strongest viable candidate that is also a separate corridor."""
     candidates = sorted(
         (

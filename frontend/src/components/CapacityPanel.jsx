@@ -22,17 +22,17 @@ export default function CapacityPanel({ capacityAnalysis }) {
     : total_system_throughput_veh_hr;
 
   return (
-    <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-4 shadow-xl space-y-3 font-mono">
-      <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5">
-        <div className="flex items-center space-x-2">
+    <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-4 shadow-xl space-y-3 font-mono max-w-full overflow-hidden">
+      <div className="flex flex-col gap-2 border-b border-zinc-800 pb-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center space-x-2 min-w-0">
           <Network className="h-4 w-4 text-emerald-400" />
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-200">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-200 break-words">
             Multi-Corridor Network Capacity & Contraflow
           </h3>
         </div>
         <button
           onClick={() => setContraflowActive(!contraflowActive)}
-          className={`text-[10px] font-bold px-2.5 py-1 rounded border transition-colors flex items-center space-x-1.5 cursor-pointer ${
+          className={`w-full sm:w-auto text-[10px] font-bold px-2.5 py-1 rounded border transition-colors flex items-center justify-center space-x-1.5 cursor-pointer ${
             contraflowActive
               ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-950'
               : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:text-zinc-100'
@@ -43,10 +43,10 @@ export default function CapacityPanel({ capacityAnalysis }) {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="bg-zinc-950/80 p-3 rounded-lg border border-zinc-850">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
+        <div className="bg-zinc-950/80 p-3 rounded-lg border border-zinc-850 min-w-0">
           <span className="text-[10px] text-zinc-400 uppercase block font-sans">Total Outflow Throughput</span>
-          <div className="flex items-baseline space-x-1.5 mt-0.5">
+          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 mt-0.5 min-w-0">
             <span className="text-xl font-extrabold text-emerald-400">
               {effectiveThroughput.toLocaleString()}
             </span>
@@ -59,12 +59,12 @@ export default function CapacityPanel({ capacityAnalysis }) {
           </div>
         </div>
 
-        <div className="bg-zinc-950/80 p-3 rounded-lg border border-zinc-850">
+        <div className="bg-zinc-950/80 p-3 rounded-lg border border-zinc-850 min-w-0 overflow-hidden">
           <span className="text-[10px] text-zinc-400 uppercase block font-sans">Corridor Allocations</span>
-          <div className="flex items-center space-x-2 mt-1 text-[11px] text-zinc-300">
+          <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-zinc-300 min-w-0">
             {Object.entries(per_route_capacity).map(([rId, cap]) => (
-              <div key={rId} className="px-1.5 py-0.5 bg-zinc-900 border border-zinc-750 rounded">
-                <span className="text-zinc-400 mr-1">{rId.toUpperCase().replace('_', ' ')}:</span>
+              <div key={rId} className="max-w-full px-1.5 py-0.5 bg-zinc-900 border border-zinc-750 rounded break-words">
+                <span className="text-zinc-400 mr-1 break-words">{rId.toUpperCase().replace('_', ' ')}:</span>
                 <span className="font-bold">{cap.toLocaleString()}</span>
               </div>
             ))}
