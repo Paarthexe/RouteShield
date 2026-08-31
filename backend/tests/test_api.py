@@ -66,3 +66,61 @@ def test_analyze_endpoint_e2e(mock_routing, mock_geocoding):
     assert len(data["routes"]) == 1
     assert data["routes"][0]["route_id"] == "route_1"
     assert len(data["routes"][0]["samples"]) == 2
+    assert data["incident_context"]["disaster_type"] == "ALL_HAZARDS"
+    assert data["incident_context"]["context_mode"] == "SUSCEPTIBILITY"
+
+
+@patch("app.services.geocoding.geocoding_service.resolve_location")
+@patch("app.services.routing.routing_service.generate_and_analyze")
+def test_analyze_endpoint_accepts_explicit_incident_context(mock_generate_and_analyze, mock_geocoding):
+    def geocode_side_effect(query):
+        if "Paradise" in query:
+            return Location(
+                query=query,
+                latitude=39.7596,
+                longitude=-121.6219,
+                display_name=f"Resolved {query}"
+            )
+        return Location(
+            query=query,
+            latitude=39.7285,
+            longitude=-121.8375,
+            display_name=f"Resolved {query}"
+        )
+
+    mock_geocoding.side_effect = geocode_side_effect
+
+    mock_route = Route(
+        route_id="route_1",
+        geometry=GeoJSONLineString(type="LineString", coordinates=[[-121.6219, 39.7596], [-121.8375, 39.7285]]),
+        distance_m=25000.0,
+        duration_s=1800.0,
+        distance_km=25.0,
+        travel_time_min=30.0,
+        tag="Fastest Evacuation Corridor",
+        samples=[],
+    )
+
+    mock_generate_and_analyze.return_value = ([mock_route], None)
+
+    payload = {
+        "origin": "Paradise, CA",
+        "destination": "Chico, CA",
+        "disaster_type": "WILDFIRE",
+        "incident_context": {
+            "disaster_type": "WILDFIRE",
+            "context_mode": "HISTORICAL",
+            "event_name": "Camp Fire",
+            "confidence": "high",
+            "source": "historical perimeter"
+        }
+    }
+
+    response = client.post("/api/routes/analyze", json=payload)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["incident_context"]["disaster_type"] == "WILDFIRE"
+    assert data["incident_context"]["context_mode"] == "HISTORICAL"
+    assert data["incident_context"]["event_name"] == "Camp Fire"
+    assert data["incident_context"]["source"] == "historical perimeter"

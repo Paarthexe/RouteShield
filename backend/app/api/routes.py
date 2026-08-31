@@ -4,6 +4,7 @@ from app.schemas.routes import RouteGenerateRequest, RouteGenerateResponse, Rout
 from app.models.route_models import Coordinate, Location, RouteAnalyzeResponse
 from app.services.geocoding import geocoding_service
 from app.services.routing import routing_service
+from app.services.incident_context_service import normalize_incident_context
 from app.config import settings
 
 router = APIRouter(prefix="/routes", tags=["routes"])
@@ -11,12 +12,14 @@ router = APIRouter(prefix="/routes", tags=["routes"])
 
 @router.post("/generate", response_model=RouteGenerateResponse)
 async def generate_routes(payload: RouteGenerateRequest):
+    incident_context = normalize_incident_context(payload.disaster_type or "ALL_HAZARDS", payload.incident_context)
     routes = await routing_service.generate_candidate_routes(
         origin=payload.origin,
         destination=payload.destination,
         waypoints=payload.waypoints,
         sample_interval_m=payload.sample_interval_m,
-        disaster_type=payload.disaster_type or "ALL_HAZARDS"
+        disaster_type=incident_context.disaster_type,
+        incident_context=incident_context,
     )
     return RouteGenerateResponse(routes=routes)
 
@@ -76,7 +79,8 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
         )
 
     interval = payload.sample_interval_m or settings.ROUTE_SAMPLE_INTERVAL_M
-    disaster_mode = payload.disaster_type or "ALL_HAZARDS"
+    incident_context = normalize_incident_context(payload.disaster_type or "ALL_HAZARDS", payload.incident_context)
+    disaster_mode = incident_context.disaster_type
 
     # Run the full agent pipeline: route gen -> sampling -> bottleneck -> viability -> decision
     routes, agent_decision = await routing_service.generate_and_analyze(
@@ -86,7 +90,8 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
         destination_loc=dest_loc,
         waypoints=waypoint_coords,
         sample_interval_m=interval,
-        disaster_type=disaster_mode
+        disaster_type=disaster_mode,
+        incident_context=incident_context,
     )
 
     return RouteAnalyzeResponse(
@@ -96,5 +101,6 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
         routes=routes,
         sample_interval_m=interval,
         disaster_type=disaster_mode,
+        incident_context=incident_context,
         agent_decision=agent_decision
     )

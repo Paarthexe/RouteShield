@@ -14,6 +14,23 @@ class Coordinate(BaseModel):
     longitude: float
 
 
+class IncidentGeometry(BaseModel):
+    type: str  # point | polygon | corridor | bbox
+    coordinates: Any
+
+
+class IncidentContext(BaseModel):
+    disaster_type: str = "ALL_HAZARDS"
+    context_mode: str = "SUSCEPTIBILITY"  # ACTIVE | FORECAST | HISTORICAL | SUSCEPTIBILITY
+    event_name: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    confidence: Optional[str] = None
+    geometry: Optional[IncidentGeometry] = None
+    source: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class GeoJSONLineString(BaseModel):
     type: str = "LineString"
     coordinates: List[Tuple[float, float]]
@@ -87,6 +104,7 @@ class AgentDecision(BaseModel):
     risk_model: Dict[str, Any] = {}
     evidence_coverage: Dict[str, Any] = {}
     disaster_type: str = "ALL_HAZARDS"
+    incident_context: Optional[IncidentContext] = None
 
 
 class Route(BaseModel):
@@ -113,5 +131,6 @@ class RouteAnalyzeResponse(BaseModel):
     routes: List[Route]
     sample_interval_m: float
     disaster_type: str = "ALL_HAZARDS"
+    incident_context: Optional[IncidentContext] = None
     cache_hit: bool = False
     agent_decision: Optional[AgentDecision] = None

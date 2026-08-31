@@ -1,7 +1,7 @@
 import logging
 from typing import List, Optional
 from app.config import settings
-from app.models.route_models import Route, AgentDecision, AgentStep, Location
+from app.models.route_models import Route, AgentDecision, AgentStep, Location, IncidentContext
 from app.services.bottleneck_service import analyze_route_bottlenecks
 from app.services.viability_service import assess_route_viability, rank_routes, risk_model_metadata
 from app.services.redundancy_service import select_independent_backup
@@ -14,7 +14,8 @@ async def run_agent_analysis(
     routes: List[Route],
     origin: Location,
     destination: Location,
-    disaster_type: str = "ALL_HAZARDS"
+    disaster_type: str = "ALL_HAZARDS",
+    incident_context: Optional[IncidentContext] = None,
 ) -> AgentDecision:
     """
     Agentic decision engine: orchestrates bottleneck analysis, viability scoring,
@@ -177,7 +178,8 @@ async def run_agent_analysis(
         backup_independence=backup_independence,
         risk_model=risk_model_metadata(),
         evidence_coverage=_build_evidence_coverage(routes),
-        disaster_type=disaster_type
+        disaster_type=disaster_type,
+        incident_context=incident_context,
     )
 
     logger.info(f"Agent Decision: Primary={decision.primary_route_id}, Backup={decision.backup_route_id}")

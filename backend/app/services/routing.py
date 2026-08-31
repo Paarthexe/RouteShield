@@ -4,7 +4,7 @@ import httpx
 from typing import List, Optional, Dict, Any
 from fastapi import HTTPException, status
 from app.config import settings
-from app.models.route_models import Coordinate, Route, GeoJSONLineString, AgentDecision, Location
+from app.models.route_models import Coordinate, Route, GeoJSONLineString, AgentDecision, Location, IncidentContext
 from app.services.sampling import sampling_service, compute_traffic_adjusted_duration
 from app.services.infrastructure_service import infrastructure_service
 from app.services.cache import cache_service
@@ -24,7 +24,8 @@ class RoutingService:
         destination: Coordinate,
         waypoints: Optional[List[Coordinate]] = None,
         sample_interval_m: Optional[float] = None,
-        disaster_type: str = "ALL_HAZARDS"
+        disaster_type: str = "ALL_HAZARDS",
+        incident_context: Optional[IncidentContext] = None,
     ) -> List[Route]:
         interval = sample_interval_m or settings.ROUTE_SAMPLE_INTERVAL_M
         w_list = waypoints or []
@@ -132,7 +133,8 @@ class RoutingService:
         destination_loc: Location,
         waypoints: Optional[List[Coordinate]] = None,
         sample_interval_m: Optional[float] = None,
-        disaster_type: str = "ALL_HAZARDS"
+        disaster_type: str = "ALL_HAZARDS",
+        incident_context: Optional[IncidentContext] = None,
     ) -> tuple:
         """
         Generate routes AND run the full agent analysis pipeline.
@@ -143,7 +145,8 @@ class RoutingService:
             destination=destination,
             waypoints=waypoints,
             sample_interval_m=sample_interval_m,
-            disaster_type=disaster_type
+            disaster_type=disaster_type,
+            incident_context=incident_context,
         )
 
         # Run agentic analysis pipeline
@@ -151,7 +154,8 @@ class RoutingService:
             routes,
             origin_loc,
             destination_loc,
-            disaster_type=disaster_type
+            disaster_type=disaster_type,
+            incident_context=incident_context,
         )
 
         return routes, agent_decision
