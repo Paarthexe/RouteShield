@@ -1,114 +1,560 @@
+/* ─── Google Fonts (must precede all other statements) ─────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color-scheme: dark;
 }
 
 code, pre, .font-mono {
   font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
 }
 
-/* Custom scrollbars */
+/* ─── Light Mode CSS Variables ───────────────────────────────── */
+.rs-light {
+  --rs-bg-app:              #f1f3f4;
+  --rs-bg-panel:            #ffffff;
+  --rs-bg-panel-secondary:  #f8f9fa;
+  --rs-border:              #e8eaed;
+  --rs-border-subtle:       #f1f3f4;
+  --rs-text-primary:        #202124;
+  --rs-text-secondary:      #5f6368;
+  --rs-text-muted:          #9aa0a6;
+  --rs-accent-blue:         #1a73e8;
+  --rs-accent-blue-light:   #e8f0fe;
+  --rs-accent-green:        #1e8e3e;
+  --rs-accent-green-light:  #e6f4ea;
+  --rs-accent-red:          #d93025;
+  --rs-accent-red-light:    #fce8e6;
+  --rs-accent-orange:       #e37400;
+  --rs-accent-orange-light: #fef3e2;
+  --rs-shadow-sm:           0 1px 3px rgba(60,64,67,.15), 0 1px 2px rgba(60,64,67,.2);
+  --rs-shadow-md:           0 2px 6px rgba(60,64,67,.12), 0 1px 3px rgba(60,64,67,.18);
+  --rs-shadow-lg:           0 8px 28px rgba(60,64,67,.12), 0 2px 8px rgba(60,64,67,.15);
+  --rs-chip-bg:             #f1f3f4;
+  --rs-chip-bg-hover:       #e8eaed;
+  --rs-chip-bg-active:      #e8f0fe;
+  --rs-chip-text:           #3c4043;
+  --rs-chip-text-active:    #1a73e8;
+  --rs-chip-border-active:  #d2e3fc;
+  --rs-fab-bg:              #ffffff;
+  --rs-route-primary:       #1a73e8;
+  --rs-route-alt:           #80868b;
+  --rs-scrollbar-track:     #f1f3f4;
+  --rs-scrollbar-thumb:     #dadce0;
+  --rs-scrollbar-thumb-h:   #bdc1c6;
+}
+
+/* ─── Dark Mode CSS Variables ────────────────────────────────── */
+.rs-dark {
+  --rs-bg-app:              #09090b;
+  --rs-bg-panel:            rgba(18, 18, 21, 0.96);
+  --rs-bg-panel-secondary:  rgba(24, 24, 27, 0.92);
+  --rs-border:              rgba(255, 255, 255, 0.08);
+  --rs-border-subtle:       rgba(255, 255, 255, 0.04);
+  --rs-text-primary:        #f4f4f5;
+  --rs-text-secondary:      #a1a1aa;
+  --rs-text-muted:          #52525b;
+  --rs-accent-blue:         #38bdf8;
+  --rs-accent-blue-light:   rgba(56, 189, 248, 0.12);
+  --rs-accent-green:        #34d399;
+  --rs-accent-green-light:  rgba(52, 211, 153, 0.12);
+  --rs-accent-red:          #f87171;
+  --rs-accent-red-light:    rgba(248, 113, 113, 0.12);
+  --rs-accent-orange:       #fb923c;
+  --rs-accent-orange-light: rgba(251, 146, 60, 0.12);
+  --rs-shadow-sm:           0 1px 4px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.4);
+  --rs-shadow-md:           0 4px 16px rgba(0,0,0,.5), 0 1px 4px rgba(0,0,0,.4);
+  --rs-shadow-lg:           0 8px 32px rgba(0,0,0,.7), 0 2px 8px rgba(0,0,0,.5);
+  --rs-chip-bg:             rgba(39, 39, 42, 0.9);
+  --rs-chip-bg-hover:       rgba(63, 63, 70, 0.9);
+  --rs-chip-bg-active:      rgba(56, 189, 248, 0.12);
+  --rs-chip-text:           #a1a1aa;
+  --rs-chip-text-active:    #38bdf8;
+  --rs-chip-border-active:  rgba(56, 189, 248, 0.3);
+  --rs-fab-bg:              rgba(24, 24, 27, 0.96);
+  --rs-route-primary:       #06b6d4;
+  --rs-route-alt:           #a855f7;
+  --rs-scrollbar-track:     #09090b;
+  --rs-scrollbar-thumb:     #27272a;
+  --rs-scrollbar-thumb-h:   #3f3f46;
+}
+
+/* ─── App Root ───────────────────────────────────────────────── */
+.rs-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--rs-bg-app);
+}
+
+/* ─── Panel Base ─────────────────────────────────────────────── */
+.rs-panel {
+  background: var(--rs-bg-panel);
+  border: 1px solid var(--rs-border);
+  border-radius: 16px;
+  box-shadow: var(--rs-shadow-lg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* ─── Unified Left Panel Container (Search + Results Stack) ── */
+.rs-left-panel-container {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  bottom: 16px;
+  width: 390px;
+  max-width: calc(100vw - 32px);
+  z-index: 400;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  transition: width 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.rs-left-panel-container.rs-dragging {
+  transition: none !important;
+  user-select: none !important;
+}
+
+/* ─── Drag Resize Handle (right border) ──────────────────────── */
+.rs-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -8px;
+  bottom: 0;
+  width: 14px;
+  cursor: col-resize;
+  pointer-events: auto;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rs-resize-handle::after {
+  content: '';
+  width: 4px;
+  height: 48px;
+  border-radius: 99px;
+  background: var(--rs-border);
+  opacity: 0.5;
+  transition: background 0.15s, opacity 0.15s, height 0.15s;
+}
+
+.rs-resize-handle:hover::after,
+.rs-left-panel-container.rs-dragging .rs-resize-handle::after {
+  background: var(--rs-accent-blue);
+  opacity: 1;
+  height: 72px;
+  box-shadow: 0 0 8px var(--rs-accent-blue);
+}
+
+/* ─── Search Panel (floating top-left card) ─────────────────── */
+.rs-search-panel {
+  width: 100%;
+  pointer-events: auto;
+  flex-shrink: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ─── Compact / Collapsed Search Bar ────────────────────────── */
+.rs-search-collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+/* ─── Search Input ───────────────────────────────────────────── */
+.rs-search-input {
+  width: 100%;
+  padding: 9px 36px 9px 38px;
+  border: 1px solid var(--rs-border);
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-family: inherit;
+  background: var(--rs-bg-panel-secondary);
+  color: var(--rs-text-primary);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.rs-search-input:focus {
+  border-color: var(--rs-accent-blue);
+  box-shadow: 0 0 0 2px var(--rs-accent-blue-light);
+}
+.rs-search-input::placeholder {
+  color: var(--rs-text-muted);
+}
+
+/* ─── Filter Chip ────────────────────────────────────────────── */
+.rs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: var(--rs-chip-bg);
+  color: var(--rs-chip-text);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  user-select: none;
+  line-height: 1;
+}
+.rs-chip:hover {
+  background: var(--rs-chip-bg-hover);
+}
+.rs-chip.rs-active {
+  background: var(--rs-chip-bg-active);
+  color: var(--rs-chip-text-active);
+  border-color: var(--rs-chip-border-active);
+}
+
+/* ─── Icon Button (square) ───────────────────────────────────── */
+.rs-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--rs-border);
+  background: var(--rs-chip-bg);
+  color: var(--rs-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  flex-shrink: 0;
+}
+.rs-icon-btn:hover {
+  background: var(--rs-chip-bg-hover);
+  color: var(--rs-text-primary);
+  box-shadow: var(--rs-shadow-sm);
+}
+
+/* ─── Primary Button ─────────────────────────────────────────── */
+.rs-btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: none;
+  background: var(--rs-accent-blue);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+.rs-btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+  box-shadow: var(--rs-shadow-md);
+}
+.rs-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: var(--rs-chip-bg);
+  color: var(--rs-text-muted);
+}
+
+/* ─── Sidebar / Results Panel (rendered below SearchPanel) ──── */
+.rs-sidebar {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--rs-bg-panel);
+  border: 1px solid var(--rs-border);
+  box-shadow: var(--rs-shadow-lg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  overflow: hidden;
+  animation: rs-panel-appear 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes rs-panel-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rs-sidebar-inner {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ─── Sidebar header (sticky) ────────────────────────────────── */
+.rs-sidebar-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 11px 14px 10px;
+  background: var(--rs-bg-panel);
+  border-bottom: 1px solid var(--rs-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+/* ─── Hazard Warning Banner ──────────────────────────────────── */
+.rs-hazard-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--rs-accent-orange-light);
+  border: 1px solid rgba(227, 116, 0, 0.25);
+  color: var(--rs-accent-orange);
+}
+
+/* ─── FAB Cluster ────────────────────────────────────────────── */
+.rs-fab-cluster {
+  position: absolute;
+  bottom: 28px;
+  right: 16px;
+  z-index: 400;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.rs-fab {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--rs-fab-bg);
+  color: var(--rs-text-secondary);
+  box-shadow: var(--rs-shadow-md);
+  border: 1px solid var(--rs-border);
+  transition: box-shadow 0.15s, color 0.15s, transform 0.12s;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1;
+}
+.rs-fab:hover {
+  box-shadow: var(--rs-shadow-lg);
+  color: var(--rs-accent-blue);
+  transform: scale(1.05);
+}
+.rs-fab:active {
+  transform: scale(0.97);
+}
+
+/* ─── Section divider ────────────────────────────────────────── */
+.rs-divider {
+  height: 1px;
+  background: var(--rs-border);
+  margin: 4px 0;
+}
+
+/* ─── Scrollbars ─────────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
-
 ::-webkit-scrollbar-track {
-  background: #09090b;
+  background: var(--rs-scrollbar-track, #09090b);
 }
-
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: var(--rs-scrollbar-thumb, #27272a);
   border-radius: 4px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: var(--rs-scrollbar-thumb-h, #3f3f46);
 }
 
-/* Custom Leaflet Styling */
-.leaflet-container {
+/* ─── Leaflet – Light Mode ───────────────────────────────────── */
+.rs-light .leaflet-container {
+  background-color: #e8eaed !important;
+  font-family: inherit;
+  width: 100%;
+  height: 100%;
+}
+.rs-light .leaflet-popup-content-wrapper {
+  background-color: #ffffff !important;
+  color: #202124 !important;
+  border: 1px solid #e8eaed !important;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 8px rgba(60,64,67,.18), 0 1px 3px rgba(60,64,67,.22) !important;
+  padding: 2px !important;
+}
+.rs-light .leaflet-popup-content {
+  margin: 10px 14px !important;
+  color: #202124;
+  font-size: 12px;
+}
+.rs-light .leaflet-popup-tip { background-color: #ffffff !important; }
+.rs-light .leaflet-control-zoom a {
+  background-color: #ffffff !important;
+  color: #5f6368 !important;
+  border-color: #dadce0 !important;
+  font-weight: 400 !important;
+}
+.rs-light .leaflet-control-zoom a:hover {
+  background-color: #f1f3f4 !important;
+  color: #202124 !important;
+}
+.rs-light .leaflet-bar {
+  border: 1px solid #dadce0 !important;
+  box-shadow: 0 2px 6px rgba(60,64,67,.15), 0 1px 2px rgba(60,64,67,.2) !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+}
+.rs-light .leaflet-control-attribution {
+  background: rgba(255,255,255,0.82) !important;
+  color: #9aa0a6 !important;
+  font-size: 10px !important;
+}
+.rs-light .glass-panel {
+  background: rgba(255,255,255,0.92) !important;
+  border-color: #e8eaed !important;
+  color: #202124 !important;
+}
+
+/* ─── Leaflet – Dark Mode ────────────────────────────────────── */
+.rs-dark .leaflet-container {
   background-color: #09090b !important;
   font-family: inherit;
   width: 100%;
   height: 100%;
 }
-
-.leaflet-popup-content-wrapper {
+.rs-dark .leaflet-popup-content-wrapper {
   background-color: #121215 !important;
   color: #f4f4f5 !important;
   border: 1px solid #27272a !important;
   border-radius: 10px !important;
-  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.6) !important;
+  box-shadow: 0 12px 30px -5px rgba(0,0,0,.6) !important;
   padding: 2px !important;
 }
-
-.leaflet-popup-content {
-  margin: 10px 12px !important;
-  line-height: 1.4 !important;
-}
-
-.leaflet-popup-tip {
-  background-color: #121215 !important;
-}
-
-.leaflet-control-zoom a {
+.rs-dark .leaflet-popup-content { margin: 10px 12px !important; line-height: 1.4 !important; }
+.rs-dark .leaflet-popup-tip { background-color: #121215 !important; }
+.rs-dark .leaflet-control-zoom a {
   background-color: #121215 !important;
   color: #d4d4d8 !important;
   border-color: #27272a !important;
 }
-
-.leaflet-control-zoom a:hover {
+.rs-dark .leaflet-control-zoom a:hover {
   background-color: #27272a !important;
   color: #ffffff !important;
   border-color: #3f3f46 !important;
 }
-
-.leaflet-bar {
+.rs-dark .leaflet-bar {
   border: 1px solid #27272a !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,.4) !important;
   border-radius: 8px !important;
   overflow: hidden;
 }
+.rs-dark .leaflet-control-attribution {
+  background: rgba(9,9,11,0.8) !important;
+  color: #52525b !important;
+  font-size: 10px !important;
+}
 
-/* Tactical HUD Panel */
-.hud-panel {
+/* ─── Legacy Tactical HUD Panel ─────────────────────────────── */
+.hud-panel, .glass-panel {
   background: rgba(18, 18, 21, 0.92);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Print / PDF Briefing Stylesheet */
+/* ─── Mobile – bottom sheet variant ─────────────────────────── */
+@media (max-width: 767px) {
+  .rs-search-panel {
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+
+  .rs-sidebar {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    height: 72vh;
+    transform: translateY(105%);
+    border-radius: 20px 20px 0 0;
+    border-right: none;
+  }
+  .rs-sidebar.rs-open {
+    transform: translateY(0);
+  }
+  .rs-sidebar-inner {
+    border-right: none;
+    border-top: 1px solid var(--rs-border);
+    border-radius: 20px 20px 0 0;
+  }
+  /* Mobile pull handle */
+  .rs-sidebar-inner::before {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 4px;
+    background: var(--rs-border);
+    border-radius: 2px;
+    margin: 0 auto 10px;
+    flex-shrink: 0;
+  }
+
+  .rs-fab-cluster {
+    bottom: 16px;
+    right: 12px;
+  }
+}
+
+/* ─── Spinner keyframe (used inline) ────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Print ──────────────────────────────────────────────────── */
 @media print {
-  body {
-    background-color: #ffffff !important;
-    color: #000000 !important;
+  body { background-color: #ffffff !important; color: #000000 !important; }
+  .rs-search-panel, .rs-fab-cluster { display: none !important; }
+  .rs-sidebar {
+    position: relative !important;
+    transform: none !important;
+    width: 100% !important;
+    height: auto !important;
+    pointer-events: auto !important;
   }
-
-  header, .print\:hidden, button, input, select {
-    display: none !important;
-  }
-
-  .bg-zinc-900, .bg-zinc-950, .bg-slate-900, .bg-slate-950 {
-    background-color: #ffffff !important;
-    color: #000000 !important;
-    border-color: #cccccc !important;
-    box-shadow: none !important;
-  }
-
-  .text-zinc-100, .text-zinc-200, .text-zinc-300, .text-slate-100, .text-slate-200 {
-    color: #000000 !important;
-  }
-
-  .text-zinc-400, .text-zinc-500, .text-slate-400, .text-slate-500 {
-    color: #444444 !important;
-  }
-
   .leaflet-container {
     height: 400px !important;
     page-break-after: always;

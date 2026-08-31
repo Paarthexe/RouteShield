@@ -3,7 +3,8 @@ import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, Circle,
 import L from 'leaflet';
 import { MapPin, Navigation, Compass, CheckCircle2, XCircle, ShieldAlert, Trash2, Ban, Flame } from 'lucide-react';
 
-const ROUTE_LINE_COLORS = {
+// Dark-mode route palette (existing)
+const ROUTE_LINE_COLORS_DARK = {
   route_1: '#06b6d4', // Cyan
   route_2: '#a855f7', // Purple
   route_3: '#f59e0b', // Amber
@@ -11,7 +12,30 @@ const ROUTE_LINE_COLORS = {
   route_5: '#f43f5e', // Rose
 };
 
-const getRouteColor = (routeId) => ROUTE_LINE_COLORS[routeId] || '#38bdf8';
+// Light-mode route palette (Google Maps-inspired)
+const ROUTE_LINE_COLORS_LIGHT = {
+  route_1: '#1a73e8', // Google Blue
+  route_2: '#80868b', // Muted grey
+  route_3: '#80868b',
+  route_4: '#80868b',
+  route_5: '#80868b',
+};
+
+// Legacy alias used in the legend
+const ROUTE_LINE_COLORS = ROUTE_LINE_COLORS_DARK;
+
+const getRouteColor = (routeId, isDarkMode = true) =>
+  (isDarkMode ? ROUTE_LINE_COLORS_DARK : ROUTE_LINE_COLORS_LIGHT)[routeId] ||
+  (isDarkMode ? '#38bdf8' : '#1a73e8');
+
+// Exposes the Leaflet map instance to the parent via callback
+function MapInitializer({ onMapReady }) {
+  const map = useMap();
+  useEffect(() => {
+    if (onMapReady) onMapReady(map);
+  }, [map, onMapReady]);
+  return null;
+}
 
 // Custom Icon Helpers
 const createCustomMarkerIcon = (label, colorBg, borderColor) => {
@@ -283,6 +307,11 @@ export default function MapView({
   aarCaseStudies = [],
   hazardIsochrones = [],
   timeCutoff = null,
+  // New props for Google Maps-inspired layout
+  isDarkMode = true,
+  onMapReady = null,
+  showHistorical = false,
+  containerClassName = '',
 }) {
   const [showIsochroneLayers, setShowIsochroneLayers] = useState(true);
   const originObj = parseCoordStr(origin) || resolvedOrigin || parseCoordStr(rawOriginStr);
@@ -327,7 +356,7 @@ export default function MapView({
   const bottlenecks = selectedRouteObj?.bottlenecks || [];
 
   return (
-    <div className="relative w-full h-full min-h-[600px] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
+    <div className={`relative w-full h-full ${containerClassName}`} style={{ minHeight: containerClassName ? undefined : 600 }}>
       <MapContainer
         center={defaultCenter}
         zoom={defaultZoom}
@@ -339,6 +368,8 @@ export default function MapView({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           maxZoom={19}
         />
+        {/* Expose map instance to parent (for FAB zoom/recenter) */}
+        <MapInitializer onMapReady={onMapReady} />
 
 
 
@@ -535,7 +566,7 @@ export default function MapView({
         {routes && routes.map(route => {
           const isSelected = route.route_id === selectedRouteId;
           const positions = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-          const strokeColor = ROUTE_LINE_COLORS[route.route_id] || '#06b6d4';
+          const strokeColor = getRouteColor(route.route_id, isDarkMode);
 
           return (
             <React.Fragment key={route.route_id}>
@@ -545,8 +576,8 @@ export default function MapView({
                   positions={positions}
                   pathOptions={{
                     color: strokeColor,
-                    weight: 10,
-                    opacity: 0.35,
+                    weight: 12,
+                    opacity: isDarkMode ? 0.30 : 0.18,
                     lineCap: 'round',
                     lineJoin: 'round'
                   }}
@@ -561,9 +592,9 @@ export default function MapView({
                 }}
                 pathOptions={{
                   color: strokeColor,
-                  weight: isSelected ? 6 : 4,
-                  opacity: isSelected ? 1.0 : 0.45,
-                  dashArray: isSelected ? null : '6, 8',
+                  weight: isSelected ? 6 : (isDarkMode ? 4 : 3),
+                  opacity: isSelected ? 1.0 : (isDarkMode ? 0.45 : 0.35),
+                  dashArray: isSelected ? null : '7, 9',
                   lineCap: 'round',
                   lineJoin: 'round'
                 }}
@@ -781,16 +812,16 @@ export default function MapView({
           );
         })}
 
-        {/* Render Real-World Documented AAR Case Study Chokepoints */}
-        {aarCaseStudies && aarCaseStudies.map((aar, idx) => (
+        {/* Render Real-World Documented AAR Case Study Chokepoints — only when Historical layer is active */}
+        {showHistorical && aarCaseStudies && aarCaseStudies.map((aar, idx) => (
           <React.Fragment key={`aar_${idx}`}>
             <Circle
               center={[aar.latitude, aar.longitude]}
               radius={1500}
               pathOptions={{
-                color: '#f59e0b',
-                fillColor: '#f59e0b',
-                fillOpacity: 0.18,
+                color: isDarkMode ? '#f59e0b' : '#80868b',
+                fillColor: isDarkMode ? '#f59e0b' : '#80868b',
+                fillOpacity: 0.12,
                 weight: 1.5,
                 dashArray: '5, 5'
               }}
@@ -881,35 +912,48 @@ export default function MapView({
 
       </MapContainer>
 
-      {/* Floating Toolbar Buttons */}
-      <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+      {/* Floating Toolbar Buttons (Top-Right) */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
         {hazardIsochrones && hazardIsochrones.length > 0 && (
           <button
             type="button"
             onClick={() => setShowIsochroneLayers(!showIsochroneLayers)}
-            className={`px-3 py-1.5 rounded-lg border font-mono text-[11px] font-bold shadow-lg flex items-center gap-1.5 transition-all cursor-pointer ${
-              showIsochroneLayers
-                ? 'bg-rose-950/90 text-rose-300 border-rose-600 ring-1 ring-rose-500'
-                : 'bg-zinc-900/90 hover:bg-zinc-800 text-zinc-400 border-zinc-700'
-            }`}
+            className="rs-chip"
+            style={{
+              padding: '6px 12px',
+              fontSize: '12px',
+              fontWeight: 600,
+              background: showIsochroneLayers ? 'var(--rs-accent-orange-light)' : 'var(--rs-chip-bg)',
+              color: showIsochroneLayers ? 'var(--rs-accent-orange)' : 'var(--rs-text-secondary)',
+              borderColor: showIsochroneLayers ? 'rgba(227, 116, 0, 0.4)' : 'var(--rs-border)',
+              boxShadow: 'var(--rs-shadow-sm)',
+            }}
           >
-            <Flame className="h-3.5 w-3.5 text-rose-400" />
+            <Flame size={12} />
             <span>{showIsochroneLayers ? 'Isochrones ON' : 'Isochrones OFF'}</span>
           </button>
         )}
         <button
           type="button"
           onClick={() => setPickerMode(pickerMode === 'hazard_barrier' ? null : 'hazard_barrier')}
-          className={`px-3 py-1.5 rounded-lg border font-mono text-[11px] font-bold shadow-lg flex items-center gap-1.5 transition-all cursor-pointer ${
-            pickerMode === 'hazard_barrier'
-              ? 'bg-rose-600 text-white border-rose-400 ring-2 ring-rose-400/50'
-              : 'bg-zinc-900/90 hover:bg-zinc-800 text-rose-300 border-rose-900/80 hover:border-rose-700'
-          }`}
+          className="rs-chip"
+          style={{
+            padding: '6px 12px',
+            fontSize: '12px',
+            fontWeight: 600,
+            background: pickerMode === 'hazard_barrier' ? 'var(--rs-accent-red-light)' : 'var(--rs-chip-bg)',
+            color: pickerMode === 'hazard_barrier' ? 'var(--rs-accent-red)' : 'var(--rs-text-secondary)',
+            borderColor: pickerMode === 'hazard_barrier' ? 'rgba(217, 48, 37, 0.5)' : 'var(--rs-border)',
+            boxShadow: 'var(--rs-shadow-sm)',
+          }}
         >
-          <Ban className="h-3.5 w-3.5 text-rose-400" />
+          <Ban size={12} />
           <span>{pickerMode === 'hazard_barrier' ? 'Cancel Barrier Tool' : '+ Draw Roadblock'}</span>
           {hazardBarriers.length > 0 && (
-            <span className="ml-1 px-1.5 py-0.2 bg-rose-950 text-rose-200 rounded-full text-[9px] border border-rose-700">
+            <span style={{
+              marginLeft: 4, padding: '1px 5px', borderRadius: 99,
+              background: 'var(--rs-accent-red)', color: '#fff', fontSize: 10, fontWeight: 700,
+            }}>
               {hazardBarriers.length}
             </span>
           )}
@@ -960,15 +1004,21 @@ export default function MapView({
 
       {/* Legend & Controls Overlay - ONLY SHOWN IF ROUTES ARE PRESENT */}
       {routes && routes.length > 0 && (
-        <div className="absolute bottom-4 left-4 z-20 glass-panel p-3 rounded-xl border border-slate-800 text-xs shadow-xl max-w-xs space-y-2">
-          <div className="flex items-center justify-between font-mono font-bold text-[11px] text-slate-300 uppercase">
+        <div className="absolute bottom-4 left-4 z-20 glass-panel p-3 rounded-xl border border-slate-800 text-xs shadow-xl max-w-xs space-y-2"
+          style={{ background: isDarkMode ? undefined : 'rgba(255,255,255,0.92)', borderColor: isDarkMode ? undefined : '#e8eaed' }}
+        >
+          <div className="flex items-center justify-between font-mono font-bold text-[11px] uppercase"
+            style={{ color: isDarkMode ? '#cbd5e1' : '#5f6368' }}
+          >
             <span>CORRIDOR LEGEND</span>
           </div>
           <div className="space-y-1 text-[11px]">
             {routes.map((route, index) => (
               <div key={route.route_id} className="flex items-center space-x-2">
-                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: ROUTE_LINE_COLORS[route.route_id] || '#06b6d4' }}></span>
-                <span className={route.route_id === selectedRouteId ? 'text-slate-100' : 'text-slate-400'}>{route.tag || `Corridor ${index + 1}`}{route.route_id === selectedRouteId ? ' · selected' : ''}</span>
+                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: getRouteColor(route.route_id, isDarkMode) }}></span>
+                <span style={{ color: route.route_id === selectedRouteId ? (isDarkMode ? '#f1f5f9' : '#202124') : (isDarkMode ? '#94a3b8' : '#9aa0a6') }}>
+                  {route.tag || `Corridor ${index + 1}`}{route.route_id === selectedRouteId ? ' · selected' : ''}
+                </span>
               </div>
             ))}
             {selectedRouteObj?.samples?.some((sample) => sample.nbi_bridges?.length) && (
@@ -976,23 +1026,23 @@ export default function MapView({
             )}
           </div>
           {/* Hazard color key */}
-          <div className="border-t border-slate-800 pt-1 space-y-1 text-[10px]">
+          <div className="border-t border-slate-800 pt-1 space-y-1 text-[10px]" style={{ borderColor: isDarkMode ? undefined : '#e8eaed' }}>
             <div className="flex items-center space-x-2">
               <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
-              <span className="text-slate-400">Low Risk Sample</span>
+              <span style={{ color: isDarkMode ? '#94a3b8' : '#5f6368' }}>Low Risk Sample</span>
             </div>
             <div className="flex items-center space-x-2">
               <span className="h-2 w-2 rounded-full bg-amber-500"></span>
-              <span className="text-slate-400">Moderate Hazard</span>
+              <span style={{ color: isDarkMode ? '#94a3b8' : '#5f6368' }}>Moderate Hazard</span>
             </div>
             <div className="flex items-center space-x-2">
               <span className="h-2 w-2 rounded-full bg-rose-500"></span>
-              <span className="text-slate-400">High Hazard</span>
+              <span style={{ color: isDarkMode ? '#94a3b8' : '#5f6368' }}>High Hazard</span>
             </div>
             {bottlenecks.length > 0 && (
               <div className="flex items-center space-x-2">
                 <span className="h-3 w-3 rounded-sm bg-rose-500/20 border border-rose-500 text-[9px] font-bold flex items-center justify-center text-rose-400">!</span>
-                <span className="text-slate-400">Bottleneck ({bottlenecks.length})</span>
+                <span style={{ color: isDarkMode ? '#94a3b8' : '#5f6368' }}>Bottleneck ({bottlenecks.length})</span>
               </div>
             )}
           </div>
