@@ -22,7 +22,6 @@ from app.services.capacity_service import capacity_service
 from app.services.incident_service import incident_service
 from app.services.poi_service import poi_service
 from app.services.connectivity_service import connectivity_service
-from app.services.fuel_service import fuel_service
 from app.services.aar_service import aar_service
 from app.services.isochrone_service import isochrone_service
 from app.config import settings
@@ -126,10 +125,9 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
         hazard_barriers=barriers
     )
 
-    # 2. Enrich routes with Tier 2 per-corridor intelligence (dead zones, fuel stops)
+    # 2. Enrich routes with Tier 2 per-corridor intelligence (dead zones)
     for r in routes:
         _safe_sync(None, "Connectivity analysis", connectivity_service.detect_communication_dead_zones, r)
-        _safe_sync(None, "Fuel analysis", fuel_service.evaluate_route_refueling, r)
 
     # 3. Concurrent retrieval of Tier 1 intelligence: weather, population exposure, capacity analysis, incidents, shelters
     weather_task = _safe_async(None, "Weather snapshot", weather_service.get_route_weather_snapshot(

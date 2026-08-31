@@ -9,6 +9,7 @@ from app.services.sampling import sampling_service
 from app.services.cache import cache_service
 from app.services.agent_service import run_agent_analysis
 from app.services.segmentation_service import segmentation_service
+from app.services.infrastructure_service import infrastructure_service
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,9 @@ class RoutingService:
                 detail="No route found between these locations."
             )
 
+        all_routes_coords = [r.get("geometry", {}).get("coordinates", []) for r in raw_routes if r.get("geometry")]
+        regional_stations = await infrastructure_service.fetch_regional_stations(all_routes_coords)
+
         # Vehicle speed profile multipliers
         speed_factor = 1.0
         if vehicle_profile == "EMERGENCY_BUS":
@@ -64,6 +68,7 @@ class RoutingService:
                 disaster_type=disaster_type,
                 hazard_barriers=hazard_barriers
             )
+            infra_data = infrastructure_service.project_stations_for_route(regional_stations, coords, dist_m)
 
             # Deduplicate bridges across all sample points, compute summary
             unique_bridges = {}
@@ -99,7 +104,8 @@ class RoutingService:
                         b["structure_id"] for b in bridge_list
                         if b.get("deck_condition") in ["1", "2", "3", "4"]
                     ]
-                }
+                },
+                infrastructure=infra_data,
             )
 
             # Generate logical corridor segments

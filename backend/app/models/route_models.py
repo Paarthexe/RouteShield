@@ -213,13 +213,37 @@ class ShelterPOI(BaseModel):
     nearest_route_id: str = ""
 
 
-class FuelStop(BaseModel):
+class CorridorStation(BaseModel):
+    id: str
     name: str
+    brand: str = ""
+    station_type: str
+    speed_tier: str = "standard"
+    speed_label: str = ""
+    est_charge_time: Optional[str] = None
+    power_label: Optional[str] = None
+    stalls_display: Optional[str] = None
     latitude: float
     longitude: float
-    distance_to_route_m: float = 0.0
-    distance_along_route_km: float = 0.0
-    nearest_route_id: str = ""
+    distance_from_origin_km: float = 0.0
+    offset_distance_m: float = 0.0
+
+
+class RouteInfrastructure(BaseModel):
+    total_gas_stations: int = 0
+    total_ev_fast_stations: int = 0
+    total_ev_standard_stations: int = 0
+    total_ev_chargers: int = 0
+    max_gas_gap_km: float = 0.0
+    max_ev_gap_km: float = 0.0
+    max_ev_fast_gap_km: float = 0.0
+    fuel_desert_warning: Optional[str] = None
+    infrastructure_penalty: float = 0.0
+    stations: List[CorridorStation] = []
+    gas_stations: List[CorridorStation] = []
+    ev_fast_stations: List[CorridorStation] = []
+    ev_standard_stations: List[CorridorStation] = []
+    ev_chargers: List[CorridorStation] = []
 
 
 class DeadZone(BaseModel):
@@ -295,13 +319,13 @@ class Route(BaseModel):
     samples: List[RouteSample] = []
     segments: List[RouteSegment] = []
     infrastructure_summary: Optional[Dict[str, Any]] = None
+    infrastructure: Optional[RouteInfrastructure] = None
     viability_score: Optional[float] = None
     viability: Optional[RouteViability] = None
     bottlenecks: List[BottleneckInfo] = []
     # Tier 2 features (per-route)
     road_capacity: Optional[RoadCapacitySummary] = None
     comm_dead_zones: List[DeadZone] = []
-    fuel_stops: List[FuelStop] = []
     aar_case_studies: List[AARCaseStudy] = []
     time_cutoff: Optional[TimeCutoffAssessment] = None
 

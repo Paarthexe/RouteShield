@@ -221,6 +221,28 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
             </span>
           </div>
         )}
+        {route.infrastructure && (route.infrastructure.total_gas_stations > 0 || route.infrastructure.total_ev_chargers > 0 || route.infrastructure.fuel_desert_warning) && (
+          <div className="py-1 px-2.5 bg-amber-950/40 border border-amber-800/60 rounded-lg text-[11px] flex items-center justify-between font-mono gap-2">
+            <span className="text-amber-300 flex items-center gap-1 min-w-0">
+              <span>⛽</span> Energy Readiness
+            </span>
+            <span className="text-amber-300 font-bold text-right">
+              {route.infrastructure.fuel_desert_warning
+                ? route.infrastructure.fuel_desert_warning
+                : `${route.infrastructure.total_gas_stations || 0} fuel · ${route.infrastructure.total_ev_fast_stations || 0} fast EV`}
+            </span>
+          </div>
+        )}
+        {route.infrastructure && route.infrastructure.total_ev_chargers > 0 && (
+          <div className="py-1 px-2.5 bg-teal-950/40 border border-teal-800/60 rounded-lg text-[11px] flex items-center justify-between font-mono gap-2">
+            <span className="text-teal-300 flex items-center gap-1 min-w-0">
+              <span>⚡</span> EV Charge Ready
+            </span>
+            <span className="text-teal-300 font-bold text-right">
+              {route.infrastructure.total_ev_fast_stations || 0} fast · max gap {Math.round(route.infrastructure.max_ev_fast_gap_km || 0)} km
+            </span>
+          </div>
+        )}
         {route.aar_case_studies && route.aar_case_studies.length > 0 && (
           <div className="py-1 px-2.5 bg-amber-950/50 border border-amber-800/80 rounded-lg text-[11px] flex items-center justify-between font-mono">
             <span className="text-amber-300 flex items-center gap-1">

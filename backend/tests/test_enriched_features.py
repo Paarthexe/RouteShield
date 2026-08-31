@@ -14,7 +14,7 @@ from app.services.capacity_service import capacity_service
 from app.services.incident_service import incident_service
 from app.services.poi_service import poi_service
 from app.services.connectivity_service import connectivity_service
-from app.services.fuel_service import fuel_service
+from app.services.infrastructure_service import infrastructure_service
 from app.services.zone_service import zone_service
 from app.services.cache import cache_service
 
@@ -73,7 +73,7 @@ async def test_poi_shelters_service():
     assert len(pois) > 0
     assert any(p.poi_type in ["shelter", "hospital", "fire_station", "assembly_point"] for p in pois)
 
-def test_connectivity_dead_zones_and_fuel_stops():
+def test_connectivity_dead_zones_and_infrastructure_projection():
     samples = [
         RouteSample(sample_id=f"r1_{i}", route_id="r1", latitude=39.0 + (i * 0.01), longitude=-121.0 - (i * 0.01), distance_from_origin_m=i * 500.0, slope_pct=10.5 if 10 <= i <= 15 else 2.0)
         for i in range(30)
@@ -91,8 +91,32 @@ def test_connectivity_dead_zones_and_fuel_stops():
     assert len(dead_zones) > 0
     assert dead_zones[0].length_km > 0
 
-    fuel_stops = fuel_service.evaluate_route_refueling(route)
-    assert len(fuel_stops) > 0
+    elements = [
+        {
+            "id": 101,
+            "lat": 39.102,
+            "lon": -121.102,
+            "tags": {"amenity": "fuel", "brand": "Chevron", "name": "Chevron Gas", "capacity": "12"}
+        },
+        {
+            "id": 102,
+            "lat": 39.145,
+            "lon": -121.145,
+            "tags": {"amenity": "charging_station", "brand": "Tesla", "name": "Tesla Supercharger", "capacity": "8", "max_power": "250"}
+        },
+        {
+            "id": 103,
+            "lat": 39.175,
+            "lon": -121.175,
+            "tags": {"amenity": "charging_station", "name": "Hotel Parking Charger", "capacity": "2"}
+        },
+    ]
+    infra = infrastructure_service.project_stations_for_route(elements, route.geometry.coordinates, route.distance_m)
+    assert infra["total_gas_stations"] == 1
+    assert infra["total_ev_fast_stations"] == 1
+    assert infra["total_ev_standard_stations"] == 1
+    assert infra["total_ev_chargers"] == 2
+    assert infra["max_gas_gap_km"] > 0
 
 @pytest.mark.asyncio
 async def test_zone_evacuation_planner():

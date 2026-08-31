@@ -311,7 +311,7 @@ export default function App() {
           onAddHazardBarrier={handleAddHazardBarrier}
           onRemoveHazardBarrier={handleRemoveHazardBarrier}
           shelters={analysisData?.shelters || []}
-          fuelStops={selectedRouteObj?.fuel_stops || []}
+          infrastructure={selectedRouteObj?.infrastructure || null}
           commDeadZones={selectedRouteObj?.comm_dead_zones || []}
           aarCaseStudies={analysisData?.aar_case_studies || []}
           hazardIsochrones={analysisData?.hazard_isochrones || []}

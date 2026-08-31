@@ -11,6 +11,7 @@ import CapacityPanel    from './CapacityPanel';
 import IncidentTimeline from './IncidentTimeline';
 import AARCaseStudyPanel from './AARCaseStudyPanel';
 import TTCCountdownPanel from './TTCCountdownPanel';
+import FuelReadinessPanel from './FuelReadinessPanel';
 import AgentBriefing    from './AgentBriefing';
 import ExportPanel      from './ExportPanel';
 import DecisionReadout  from './DecisionReadout';
@@ -328,6 +329,11 @@ export default function SidePanel({
                 timeCutoff={selectedRouteObj?.time_cutoff || analysisData?.time_cutoff}
                 disasterType={disasterType}
               />
+            )}
+
+            {/* Refueling & range readiness */}
+            {selectedRouteObj && (
+              <FuelReadinessPanel route={selectedRouteObj} />
             )}
 
             {/* Agent Briefing */}

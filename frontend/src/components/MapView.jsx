@@ -134,12 +134,51 @@ const createShelterIcon = (poiType) => {
   });
 };
 
-const createFuelIcon = () => L.divIcon({
-  className: 'fuel-poi-marker',
-  html: `<div style="background:#d97706;border:2px solid #ffffff;color:white;width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 0 8px rgba(217,119,6,0.8);">⛽</div>`,
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
-});
+const normalizeLatLon = (item) => {
+  const latitude = Number(item?.latitude ?? item?.lat);
+  const longitude = Number(item?.longitude ?? item?.lon);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  return { latitude, longitude };
+};
+
+const dedupeStationsForDisplay = (stations, maxStations = 15) => {
+  const distinctStations = [];
+  for (const station of stations) {
+    const coords = normalizeLatLon(station);
+    if (!coords) continue;
+    const isNear = distinctStations.some((existing) => {
+      const existingCoords = normalizeLatLon(existing);
+      if (!existingCoords) return false;
+      return Math.hypot(existingCoords.latitude - coords.latitude, existingCoords.longitude - coords.longitude) < 0.006;
+    });
+    if (!isNear || distinctStations.length < maxStations) distinctStations.push(station);
+  }
+  return distinctStations;
+};
+
+const createStationChipIcon = (isGas, isFast) => {
+  const shortLabel = isGas ? 'Fuel' : isFast ? 'Fast EV' : 'AC';
+  const bgColor = isGas ? 'rgba(88, 28, 135, 0.92)' : isFast ? 'rgba(6, 78, 59, 0.92)' : 'rgba(7, 89, 133, 0.92)';
+  const borderColor = isGas ? '#c084fc' : isFast ? '#10b981' : '#38bdf8';
+  const textColor = isGas ? '#f3e8ff' : isFast ? '#a7f3d0' : '#bae6fd';
+  const dotColor = isGas ? '#c084fc' : isFast ? '#10b981' : '#38bdf8';
+  return L.divIcon({
+    className: 'custom-station-chip-marker',
+    html: `<div style="transform: translate(-50%, -50%);display:inline-flex;align-items:center;gap:4px;padding:2px 6px 2px 4px;border-radius:999px;border:1px solid ${borderColor};background:${bgColor};color:${textColor};font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:9px;font-weight:800;line-height:1;letter-spacing:.02em;white-space:nowrap;box-shadow:0 1px 6px rgba(0,0,0,.35);"><span style="width:6px;height:6px;border-radius:999px;background:${dotColor};box-shadow:0 0 6px ${dotColor};flex:0 0 auto;"></span><span>${shortLabel}</span></div>`,
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+  });
+};
+
+const createStationDotIcon = (isGas, isFast) => {
+  const dotColor = isGas ? '#c084fc' : isFast ? '#10b981' : '#38bdf8';
+  return L.divIcon({
+    className: 'custom-station-dot-marker',
+    html: `<div style="transform: translate(-50%, -50%);width:10px;height:10px;border-radius:999px;background:${dotColor};border:1.5px solid rgba(9,9,11,.95);box-shadow:0 0 8px ${dotColor}aa;"></div>`,
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
+  });
+};
 
 const createAARHistoricIcon = () => L.divIcon({
   className: 'aar-historic-marker',
@@ -302,7 +341,7 @@ export default function MapView({
   onAddHazardBarrier,
   onRemoveHazardBarrier,
   shelters = [],
-  fuelStops = [],
+  infrastructure = null,
   commDeadZones = [],
   aarCaseStudies = [],
   hazardIsochrones = [],
@@ -769,26 +808,35 @@ export default function MapView({
           </Marker>
         ))}
 
-        {/* Render Fuel Stops */}
-        {fuelStops && fuelStops.map((f, idx) => (
-          <Marker
-            key={`fuel_${idx}`}
-            position={[f.latitude, f.longitude]}
-            icon={createFuelIcon()}
-          >
-            <Popup>
-              <div className="p-1 space-y-1 font-sans text-xs max-w-[220px]">
-                <span className="text-[10px] font-bold text-amber-400 font-mono uppercase block">
-                  Fuel & Refueling Depot
-                </span>
-                <p className="text-xs font-bold text-slate-100">{f.name}</p>
-                <span className="text-[10px] text-slate-400 font-mono block">
-                  Mile {f.distance_along_route_km} along corridor
-                </span>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        {/* Render corridor energy / charging stations */}
+        {dedupeStationsForDisplay(infrastructure?.stations || [], 14).map((st, idx) => {
+          const coords = normalizeLatLon(st);
+          if (!coords) return null;
+          const isGas = st.station_type === 'gas';
+          const isFast = st.station_type === 'ev_fast';
+          const icon = idx < 8 ? createStationChipIcon(isGas, isFast) : createStationDotIcon(isGas, isFast);
+          return (
+            <Marker key={`station_${idx}`} position={[coords.latitude, coords.longitude]} icon={icon}>
+              <Popup>
+                <div className="p-1 space-y-1 font-sans text-xs max-w-[240px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`text-[10px] font-bold font-mono uppercase ${isGas ? 'text-purple-300' : isFast ? 'text-emerald-300' : 'text-sky-300'}`}>
+                      {isGas ? 'Fuel Stop' : isFast ? 'Fast EV Charger' : 'Standard EV Charger'}
+                    </span>
+                    {st.stalls_display && <span className="text-[9px] text-slate-500 font-mono">{st.stalls_display}</span>}
+                  </div>
+                  <p className="text-xs font-bold text-slate-100">{st.name}</p>
+                  <div className="text-[10px] text-slate-400 font-mono space-y-0.5">
+                    {st.brand ? <div>{st.brand}</div> : null}
+                    <div>Km {st.distance_from_origin_km} along corridor</div>
+                    <div>{st.offset_distance_m}m offset from route</div>
+                    {!isGas && st.speed_label ? <div>{st.speed_label}{st.power_label ? ` · ${st.power_label}` : ''}</div> : null}
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
 
         {/* Render RF Communication Dead Zones */}
         {selectedRouteObj?.geometry?.coordinates?.length > 0 && selectedRouteObj?.comm_dead_zones && selectedRouteObj.comm_dead_zones.map((dz, idx) => {

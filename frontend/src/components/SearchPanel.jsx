@@ -219,40 +219,95 @@ export default function SearchPanel({
         </div>
 
         {/* ── Waypoints ── */}
-        {waypoints.map((wp, idx) => (
-          <div
-            key={idx}
-            draggable
-            onDragStart={e => handleDragStart(e, idx)}
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => handleDrop(e, idx)}
-            style={{
-              position: 'relative', marginBottom: 7,
-              opacity: draggedIdx === idx ? 0.45 : 1,
-            }}
-          >
-            <GripVertical size={11} style={{
-              position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)',
-              color: 'var(--rs-text-muted)', cursor: 'grab', pointerEvents: 'none',
-            }} />
-            <input
-              style={{ ...inputStyle, paddingLeft: 28 }}
-              placeholder={`Waypoint (${String.fromCharCode(66 + idx)})`}
-              value={wp}
-              onChange={e => handleUpdateWaypoint(idx, e.target.value)}
-            />
-            <button
+        {waypoints.map((wp, idx) => {
+          const stopLetter = String.fromCharCode(66 + idx);
+          const isPickingWaypoint = pickerMode === `waypoint_${idx}`;
+          return (
+            <div
+              key={idx}
+              draggable
+              onDragStart={e => handleDragStart(e, idx)}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => handleDrop(e, idx)}
               style={{
-                position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: 'var(--rs-text-muted)', padding: 2, display: 'flex',
+                marginBottom: 8,
+                opacity: draggedIdx === idx ? 0.45 : 1,
+                borderRadius: 10,
+                border: draggedIdx === idx ? '1px dashed rgba(245, 158, 11, 0.7)' : '1px solid transparent',
+                padding: draggedIdx === idx ? 6 : 0,
+                transition: 'all 0.15s ease',
               }}
-              onClick={() => handleRemoveWaypoint(idx)}
             >
-              <Minus size={11} />
-            </button>
-          </div>
-        ))}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5, gap: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, minWidth: 0 }}>
+                  <GripVertical size={11} style={{ color: 'var(--rs-text-muted)', cursor: 'grab', flexShrink: 0 }} />
+                  <span style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: 6,
+                    background: '#d97706',
+                    color: '#fff',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    {stopLetter}
+                  </span>
+                  <span style={{ color: 'var(--rs-text-secondary)', fontWeight: 700, letterSpacing: '0.04em' }}>
+                    WAYPOINT {idx + 1}
+                  </span>
+                </label>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    onClick={() => setPickerMode(isPickingWaypoint ? null : `waypoint_${idx}`)}
+                    style={{
+                      fontSize: 11,
+                      fontFamily: 'JetBrains Mono, SF Mono, Menlo, monospace',
+                      padding: '3px 8px',
+                      borderRadius: 7,
+                      border: `1px solid ${isPickingWaypoint ? '#f59e0b' : 'var(--rs-border)'}`,
+                      background: isPickingWaypoint ? 'rgba(245, 158, 11, 0.12)' : 'var(--rs-bg-panel-secondary)',
+                      color: isPickingWaypoint ? '#fbbf24' : 'var(--rs-text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isPickingWaypoint ? 'Click map to set' : 'Pick on map'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveWaypoint(idx)}
+                    title="Remove stop"
+                    style={{
+                      padding: 4,
+                      borderRadius: 7,
+                      border: '1px solid var(--rs-border)',
+                      background: 'var(--rs-bg-panel-secondary)',
+                      color: 'var(--rs-text-muted)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Minus size={11} />
+                  </button>
+                </div>
+              </div>
+
+              <input
+                style={{ ...inputStyle, paddingLeft: 14, paddingRight: 14 }}
+                placeholder={`Waypoint (${stopLetter}) location`}
+                value={wp}
+                onChange={e => handleUpdateWaypoint(idx, e.target.value)}
+              />
+            </div>
+          );
+        })}
 
         {/* ── Destination input ── */}
         <div style={{ position: 'relative', marginBottom: 10 }}>
@@ -314,7 +369,7 @@ export default function SearchPanel({
             }}
           >
             <Ban size={11} />
-            {pickerMode === 'hazard_barrier' ? 'Draw Barrier…' : '+ Roadblock'}
+            {pickerMode === 'hazard_barrier' ? 'Draw Barrier…' : 'Roadblock'}
             {hazardBarriers && hazardBarriers.length > 0 && (
               <span style={{
                 fontSize: 9, padding: '1px 5px', borderRadius: 99,
