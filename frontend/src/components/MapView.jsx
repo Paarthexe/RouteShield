@@ -157,14 +157,14 @@ const dedupeStationsForDisplay = (stations, maxStations = 15) => {
 };
 
 const createStationChipIcon = (isGas, isFast) => {
-  const shortLabel = isGas ? 'Fuel' : isFast ? 'Fast EV' : 'AC';
+  const shortLabel = isGas ? '⛽' : isFast ? '⚡' : '🔌';
   const bgColor = isGas ? 'rgba(88, 28, 135, 0.92)' : isFast ? 'rgba(6, 78, 59, 0.92)' : 'rgba(7, 89, 133, 0.92)';
   const borderColor = isGas ? '#c084fc' : isFast ? '#10b981' : '#38bdf8';
   const textColor = isGas ? '#f3e8ff' : isFast ? '#a7f3d0' : '#bae6fd';
   const dotColor = isGas ? '#c084fc' : isFast ? '#10b981' : '#38bdf8';
   return L.divIcon({
     className: 'custom-station-chip-marker',
-    html: `<div style="transform: translate(-50%, -50%);display:inline-flex;align-items:center;gap:4px;padding:2px 6px 2px 4px;border-radius:999px;border:1px solid ${borderColor};background:${bgColor};color:${textColor};font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:9px;font-weight:800;line-height:1;letter-spacing:.02em;white-space:nowrap;box-shadow:0 1px 6px rgba(0,0,0,.35);"><span style="width:6px;height:6px;border-radius:999px;background:${dotColor};box-shadow:0 0 6px ${dotColor};flex:0 0 auto;"></span><span>${shortLabel}</span></div>`,
+    html: `<div style="transform: translate(-50%, -50%);display:inline-flex;align-items:center;justify-content:center;padding:3px 6px;border-radius:999px;border:1px solid ${borderColor};background:${bgColor};color:${textColor};font-size:12px;line-height:1;white-space:nowrap;box-shadow:0 1px 6px rgba(0,0,0,.35);"><span style="filter: drop-shadow(0 0 4px ${dotColor});">${shortLabel}</span></div>`,
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
@@ -172,11 +172,12 @@ const createStationChipIcon = (isGas, isFast) => {
 
 const createStationDotIcon = (isGas, isFast) => {
   const dotColor = isGas ? '#c084fc' : isFast ? '#10b981' : '#38bdf8';
+  const emoji = isGas ? '⛽' : isFast ? '⚡' : '🔌';
   return L.divIcon({
     className: 'custom-station-dot-marker',
-    html: `<div style="transform: translate(-50%, -50%);width:10px;height:10px;border-radius:999px;background:${dotColor};border:1.5px solid rgba(9,9,11,.95);box-shadow:0 0 8px ${dotColor}aa;"></div>`,
-    iconSize: [10, 10],
-    iconAnchor: [5, 5],
+    html: `<div style="transform: translate(-50%, -50%);width:18px;height:18px;border-radius:999px;background:rgba(9,9,11,.88);border:1.5px solid ${dotColor};box-shadow:0 0 8px ${dotColor}aa;display:flex;align-items:center;justify-content:center;font-size:10px;line-height:1;">${emoji}</div>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
   });
 };
 
@@ -996,7 +997,7 @@ export default function MapView({
           }}
         >
           <Ban size={12} />
-          <span>{pickerMode === 'hazard_barrier' ? 'Cancel Barrier Tool' : '+ Draw Roadblock'}</span>
+          <span>{pickerMode === 'hazard_barrier' ? 'Cancel Barrier Tool' : 'Draw Roadblock'}</span>
           {hazardBarriers.length > 0 && (
             <span style={{
               marginLeft: 4, padding: '1px 5px', borderRadius: 99,

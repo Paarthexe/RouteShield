@@ -203,7 +203,7 @@ class InfrastructureService:
 
         warnings = []
         if max_gas_gap_km > REFUEL_DESERT_THRESHOLD_KM:
-            warnings.append(f"Fuel desert: {max_gas_gap_km:.0f} km without gas station")
+            warnings.append(f"Fuel desert: {max_gas_gap_km:.0f} km without Fuel Station")
         if total_route_d > 150_000 and max_ev_fast_gap_km > 80.0:
             warnings.append(f"EV fast charging desert: {max_ev_fast_gap_km:.0f} km without high-speed charger")
 

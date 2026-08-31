@@ -111,6 +111,7 @@ code, pre, .font-mono {
   max-width: calc(100vw - 32px);
   z-index: 400;
   display: flex;
+  justify-content: flex-start;
   flex-direction: column;
   gap: 10px;
   pointer-events: none;

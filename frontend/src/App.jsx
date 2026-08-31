@@ -39,7 +39,6 @@ export default function App() {
   const [panelWidth,        setPanelWidth]        = useState(390);
   const [widthMode,         setWidthMode]         = useState('standard'); // 'standard' (390), 'wide' (640), 'ultrawide' (880)
   const [isSearchCollapsed, setIsSearchCollapsed] = useState(false);
-  const [isPanelMaximized,  setIsPanelMaximized]  = useState(false);
   const [isDragging,        setIsDragging]        = useState(false);
 
   // ─── Errors / notices ────────────────────────────────────────
@@ -248,10 +247,20 @@ export default function App() {
     }
   };
 
-  const handleToggleMaximize = () => {
-    const nextMax = !isPanelMaximized;
-    setIsPanelMaximized(nextMax);
-    setIsSearchCollapsed(nextMax);
+  const handleBackToPlanner = () => {
+    setShowSidebar(false);
+    setAnalysisData(null);
+    setSelectedRouteId('route_1');
+    setSelectedSample(null);
+    setShowLiveMonitor(false);
+    setIsSearchCollapsed(false);
+    setAvoidPointMarker(null);
+    setPendingAvoidCallback(null);
+    setRepairedGeometry(null);
+    setOriginalGeometry(null);
+    setPickerMode(null);
+    setError(null);
+    setNotice(null);
   };
 
   // ─── FAB handlers ────────────────────────────────────────────
@@ -328,39 +337,41 @@ export default function App() {
           className={`rs-left-panel-container ${isDragging ? 'rs-dragging' : ''}`}
           style={{ width: `${panelWidth}px` }}
         >
-          {/* Top Search Card (collapsible) */}
-          <SearchPanel
-            isDarkMode={isDarkMode}
-            setIsDarkMode={setIsDarkMode}
-            onOpenAgentTools={() => setShowAgentTools(true)}
-            // route inputs
-            origin={origin}              setOrigin={setOrigin}
-            destination={destination}    setDestination={setDestination}
-            waypoints={waypoints}        setWaypoints={setWaypoints}
-            sampleInterval={sampleInterval}   setSampleInterval={setSampleInterval}
-            disasterType={disasterType}       setDisasterType={setDisasterType}
-            vehicleProfile={vehicleProfile}   setVehicleProfile={handleVehicleProfileChange}
-            onAnalyze={handleAnalyze}         loading={loading}
-            pickerMode={pickerMode}           setPickerMode={setPickerMode}
-            hazardBarriers={hazardBarriers}
-            // layer toggles
-            showLiveFires={showLiveFires}     setShowLiveFires={setShowLiveFires}
-            showHistorical={showHistorical}   setShowHistorical={setShowHistorical}
-            // mode tab
-            activeTab={activeTab}             setActiveTab={(tab) => {
-              setActiveTab(tab);
-              setShowSidebar(true);
-            }}
-            isCollapsed={isSearchCollapsed}
-            setIsCollapsed={setIsSearchCollapsed}
-            hasResults={Boolean(analysisData)}
-          />
+          {/* Top Search Card (hidden while active route analysis is showing) */}
+          {!(analysisData && showSidebar) && (
+            <SearchPanel
+              isDarkMode={isDarkMode}
+              setIsDarkMode={setIsDarkMode}
+              onOpenAgentTools={() => setShowAgentTools(true)}
+              // route inputs
+              origin={origin}              setOrigin={setOrigin}
+              destination={destination}    setDestination={setDestination}
+              waypoints={waypoints}        setWaypoints={setWaypoints}
+              sampleInterval={sampleInterval}   setSampleInterval={setSampleInterval}
+              disasterType={disasterType}       setDisasterType={setDisasterType}
+              vehicleProfile={vehicleProfile}   setVehicleProfile={handleVehicleProfileChange}
+              onAnalyze={handleAnalyze}         loading={loading}
+              pickerMode={pickerMode}           setPickerMode={setPickerMode}
+              hazardBarriers={hazardBarriers}
+              // layer toggles
+              showLiveFires={showLiveFires}     setShowLiveFires={setShowLiveFires}
+              showHistorical={showHistorical}   setShowHistorical={setShowHistorical}
+              // mode tab
+              activeTab={activeTab}             setActiveTab={(tab) => {
+                setActiveTab(tab);
+                setShowSidebar(true);
+              }}
+              isCollapsed={isSearchCollapsed}
+              setIsCollapsed={setIsSearchCollapsed}
+              hasResults={Boolean(analysisData)}
+            />
+          )}
 
           {/* Results Side Panel */}
           {showSidebar && (
             <SidePanel
               isOpen={showSidebar}
-              onClose={() => setShowSidebar(false)}
+              onClose={handleBackToPlanner}
               isDarkMode={isDarkMode}
               activeTab={activeTab}
               // analysis state
@@ -381,8 +392,6 @@ export default function App() {
               // expansion controls
               widthMode={widthMode}
               onCycleWidth={handleCycleWidth}
-              isMaximized={isPanelMaximized}
-              onToggleMaximize={handleToggleMaximize}
             />
           )}
 

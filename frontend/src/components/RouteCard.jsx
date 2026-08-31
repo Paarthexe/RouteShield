@@ -52,6 +52,13 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
   const statusKey = viability?.status || 'CANDIDATE';
   const statusCfg = STATUS_CONFIG[statusKey] || STATUS_CONFIG.CANDIDATE;
 
+  const routeLabel =
+    statusKey === 'PRIMARY' ? 'Primary Route' :
+    statusKey === 'BACKUP' ? 'Backup Route' :
+    statusKey === 'REJECTED' ? 'Rejected Route' :
+    isFastest ? 'Fastest Route' :
+    'Alternate Route';
+
   const timeDiffMin = !isFastest && fastestDuration !== undefined
     ? Math.round((route.travel_time_min - fastestDuration) * 10) / 10
     : 0;
@@ -82,8 +89,11 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
             </span>
           </div>
           <h3 className="text-sm font-bold text-slate-100 mt-1">
-            {route.tag || `Corridor ${route.route_id}`}
+            {routeLabel}
           </h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            {route.tag || `Corridor ${route.route_id}`}
+          </p>
         </div>
 
         {/* Viability Gauge */}

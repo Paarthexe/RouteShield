@@ -34,7 +34,6 @@ export default function AnalysisTrace({ loading, analysisData, error }) {
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-400 font-mono">Analysis workflow</p>
           <p className="mt-1 text-xs text-slate-400">Traceable stages, no hidden reasoning</p>
         </div>
-        <span className="rounded border border-amber-800/70 bg-amber-950/40 px-2 py-1 text-[10px] font-mono text-amber-300">STAGE 2</span>
       </div>
       <ol className="space-y-2">
         {STEPS.map(([key, label], index) => {

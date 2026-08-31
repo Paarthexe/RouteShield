@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import {
-  X, Shield, AlertTriangle, Info, Compass,
-  Eye, EyeOff, Radio, Maximize2, Minimize2,
-  ArrowUpToLine, ArrowDownToLine, Columns,
+  ArrowLeft, Shield, AlertTriangle, Info, Compass,
+  Eye, EyeOff, Radio, Maximize2, Minimize2, Columns,
 } from 'lucide-react';
 import RouteCard        from './RouteCard';
 import SegmentManager   from './SegmentManager';
@@ -41,8 +40,6 @@ export default function SidePanel({
   // Expansion controls
   widthMode = 'standard',
   onCycleWidth = null,
-  isMaximized = false,
-  onToggleMaximize = null,
 }) {
   const routes        = analysisData?.routes || [];
   const selectedRouteObj = routes.find(r => r.route_id === selectedRouteId);
@@ -50,6 +47,20 @@ export default function SidePanel({
   const activeIndex      = Math.max(0, routes.findIndex(r => r.route_id === selectedRouteId));
   const activeRoute      = routes[activeIndex];
   const totalRoutes      = routes.length;
+
+  const getRouteChipMeta = (route) => {
+    const isFastest = route?.travel_time_min === fastestDuration;
+    const status = route?.viability?.status || 'CANDIDATE';
+    if (status === 'PRIMARY') return { label: 'Primary', short: 'Best', bg: 'rgba(16, 185, 129, 0.18)', border: 'rgba(16, 185, 129, 0.5)', color: '#6ee7b7' };
+    if (isFastest) return { label: 'Fastest', short: 'Fastest', bg: 'rgba(56, 189, 248, 0.18)', border: 'rgba(56, 189, 248, 0.45)', color: '#7dd3fc' };
+    if (status === 'BACKUP') return { label: 'Backup', short: 'Backup', bg: 'rgba(59, 130, 246, 0.16)', border: 'rgba(96, 165, 250, 0.4)', color: '#93c5fd' };
+    if (status === 'REJECTED') return { label: 'Rejected', short: 'Reject', bg: 'rgba(244, 63, 94, 0.16)', border: 'rgba(251, 113, 133, 0.4)', color: '#fda4af' };
+    return { label: 'Candidate', short: `Alt ${route?.route_id?.split('_')[1] || ''}`.trim(), bg: 'rgba(245, 158, 11, 0.14)', border: 'rgba(251, 191, 36, 0.35)', color: '#fcd34d' };
+  };
+
+  const primaryRoute = routes.find((route) => route?.viability?.status === 'PRIMARY') || null;
+  const backupRoute = routes.find((route) => route?.viability?.status === 'BACKUP') || null;
+  const fastestRoute = routes.find((route) => route?.travel_time_min === fastestDuration) || null;
 
   /* Hazard warning: fire isochrones present or route viability is bad */
   const hasHazard =
@@ -61,7 +72,7 @@ export default function SidePanel({
     <aside className={`rs-sidebar ${isOpen ? 'rs-open' : ''}`}>
       {/* ── Sticky header ── */}
       <div className="rs-sidebar-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap', flex: 1 }}>
           <Shield size={15} style={{ color: 'var(--rs-accent-blue)', flexShrink: 0 }} />
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--rs-text-primary)', letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>
             {activeTab === 'zones' ? 'Zone Planner' : 'Route Analysis'}
@@ -75,8 +86,42 @@ export default function SidePanel({
               {totalRoutes} corridor{totalRoutes !== 1 ? 's' : ''}
             </span>
           )}
+          {totalRoutes > 1 && activeTab !== 'zones' && (
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
+              {routes.map((rt, idx) => {
+                const active = rt.route_id === selectedRouteId;
+                return (
+                  <button
+                    key={`header_route_${rt.route_id}`}
+                    onClick={() => { setSelectedRouteId(rt.route_id); setSelectedSample(null); }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      padding: '3px 9px',
+                      borderRadius: 8,
+                      border: `1px solid ${active ? 'var(--rs-accent-blue)' : 'var(--rs-border)'}`,
+                      background: active ? 'var(--rs-accent-blue)' : 'var(--rs-bg-panel-secondary)',
+                      color: active ? '#fff' : 'var(--rs-text-secondary)',
+                      cursor: 'pointer',
+                      fontFamily: 'monospace',
+                      whiteSpace: 'nowrap',
+                      maxWidth: '100%',
+                      minWidth: 0,
+                      flex: '0 1 auto',
+                    }}
+                    title={`Switch to route ${idx + 1}`}
+                  >
+                    <span style={{ flexShrink: 0 }}>R{idx + 1}</span>
+                  </button>
+                );
+              })}
+              </div>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexShrink: 0 }}>
           {/* Expand Sideways (Width cycle) */}
           {onCycleWidth && (
             <button
@@ -98,21 +143,6 @@ export default function SidePanel({
             </button>
           )}
 
-          {/* Expand Upwards (Maximize height) */}
-          {onToggleMaximize && (
-            <button
-              className="rs-icon-btn"
-              onClick={onToggleMaximize}
-              title={isMaximized ? 'Restore search inputs' : 'Maximize height (hide search inputs)'}
-              style={{
-                color: isMaximized ? 'var(--rs-accent-blue)' : undefined,
-                background: isMaximized ? 'var(--rs-accent-blue-light)' : undefined,
-              }}
-            >
-              {isMaximized ? <ArrowDownToLine size={13} /> : <ArrowUpToLine size={13} />}
-            </button>
-          )}
-
           {/* Live monitor toggle */}
           {analysisData && selectedRouteObj && (
             <button
@@ -125,8 +155,8 @@ export default function SidePanel({
             </button>
           )}
 
-          <button className="rs-icon-btn" onClick={onClose} title="Close panel">
-            <X size={13} />
+          <button className="rs-icon-btn" onClick={onClose} title="Back to planner">
+            <ArrowLeft size={13} />
           </button>
         </div>
       </div>
@@ -190,36 +220,19 @@ export default function SidePanel({
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '9px 13px', borderBottom: '1px solid var(--rs-border)',
+                  gap: 10, flexWrap: 'wrap',
                 }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    fontSize: 11, fontWeight: 600, color: 'var(--rs-text-secondary)',
-                  }}>
-                    <Compass size={12} style={{ color: 'var(--rs-accent-blue)' }} />
-                    Corridor {activeIndex + 1} / {totalRoutes}
-                  </div>
-                  {totalRoutes > 1 && (
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {routes.map((rt, idx) => {
-                        const active = rt.route_id === selectedRouteId;
-                        return (
-                          <button
-                            key={rt.route_id}
-                            onClick={() => { setSelectedRouteId(rt.route_id); setSelectedSample(null); }}
-                            style={{
-                              fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6,
-                              border: `1px solid ${active ? 'var(--rs-accent-blue)' : 'var(--rs-border)'}`,
-                              background: active ? 'var(--rs-accent-blue)' : 'transparent',
-                              color: active ? '#fff' : 'var(--rs-text-secondary)',
-                              cursor: 'pointer', fontFamily: 'monospace',
-                            }}
-                          >
-                            C{idx + 1}
-                          </button>
-                        );
-                      })}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      fontSize: 11, fontWeight: 600, color: 'var(--rs-text-secondary)',
+                    }}>
+                      <Compass size={12} style={{ color: 'var(--rs-accent-blue)' }} />
+                      Corridor {activeIndex + 1} / {totalRoutes}
                     </div>
-                  )}
+                    {totalRoutes > 1 && null}
+                  </div>
+                  {totalRoutes > 1 && null}
                 </div>
 
                 {/* Active route card */}

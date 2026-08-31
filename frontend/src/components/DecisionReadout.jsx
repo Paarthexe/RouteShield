@@ -9,6 +9,26 @@ export default function DecisionReadout({ routes, selectedRoute, agentDecision }
   const evidenceCount = route.samples?.filter((sample) => sample.mireye_data || sample.nbi_bridges?.length || sample.hazards?.length).length || 0;
   const hasDecision = Boolean(agentDecision);
   const noViableRoute = hasDecision && !agentDecision.primary_route_id;
+  const primaryRoute = routes.find((item) => item?.viability?.status === 'PRIMARY') || routes.find((item) => item.route_id === agentDecision?.primary_route_id) || null;
+  const backupRoute = routes.find((item) => item?.viability?.status === 'BACKUP') || routes.find((item) => item.route_id === agentDecision?.backup_route_id) || null;
+  const rejectedRoutes = routes.filter((item) => item?.viability?.status === 'REJECTED');
+  const selectedRole = route?.viability?.status === 'PRIMARY'
+    ? 'Primary Route'
+    : route?.viability?.status === 'BACKUP'
+    ? 'Backup Route'
+    : route?.viability?.status === 'REJECTED'
+    ? 'Rejected Route'
+    : route?.route_id === fastest?.route_id
+    ? 'Fastest Route'
+    : 'Alternate Route';
+
+  const statusItems = [
+    route ? { label: 'Selected', value: route.route_id.toUpperCase().replace('_', ' '), tone: 'border-cyan-800/60 bg-cyan-950/40 text-cyan-300' } : null,
+    primaryRoute ? { label: 'Primary', value: primaryRoute.route_id.toUpperCase().replace('_', ' '), tone: 'border-emerald-800/60 bg-emerald-950/40 text-emerald-300' } : null,
+    fastest ? { label: 'Fastest', value: fastest.route_id.toUpperCase().replace('_', ' '), tone: 'border-sky-800/60 bg-sky-950/40 text-sky-300' } : null,
+    backupRoute ? { label: 'Backup', value: backupRoute.route_id.toUpperCase().replace('_', ' '), tone: 'border-blue-800/60 bg-blue-950/40 text-blue-300' } : null,
+    rejectedRoutes.length ? { label: 'Rejected', value: rejectedRoutes.map((item) => item.route_id.toUpperCase().replace('_', ' ')).join(', '), tone: 'border-rose-800/60 bg-rose-950/40 text-rose-300' } : null,
+  ].filter(Boolean);
 
   return (
     <section className="rounded-xl border border-cyan-900/70 bg-gradient-to-br from-cyan-950/50 to-slate-900 p-4 shadow-lg shadow-cyan-950/20">
@@ -25,7 +45,8 @@ export default function DecisionReadout({ routes, selectedRoute, agentDecision }
       <div className="mt-4 grid grid-cols-3 gap-2">
         <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2.5">
           <span className="block text-[9px] uppercase tracking-wider text-slate-500">Selected view</span>
-          <span className="mt-1 block truncate text-sm font-bold text-white">{route.tag || route.route_id}</span>
+          <span className="mt-1 block truncate text-sm font-bold text-white">{selectedRole}</span>
+          <span className="mt-1 block truncate text-[11px] text-slate-400">{route.tag || route.route_id}</span>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2.5">
           <span className="block text-[9px] uppercase tracking-wider text-slate-500">vs fastest</span>
@@ -37,6 +58,16 @@ export default function DecisionReadout({ routes, selectedRoute, agentDecision }
         </div>
 
       </div>
+      {statusItems.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {statusItems.map((item) => (
+            <div key={`${item.label}-${item.value}`} className={`rounded-full border px-2.5 py-1 text-[10px] font-mono font-bold ${item.tone}`}>
+              <span className="mr-1 opacity-75">{item.label}</span>
+              <span>{item.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-400">
         <ShieldCheck className={`h-3.5 w-3.5 ${noViableRoute ? 'text-rose-400' : 'text-emerald-400'}`} />
         <span>{noViableRoute ? 'No route is being presented as safe. The least-bad corridor remains available for review only.' : hasDecision ? 'Route status is derived from the viability gate and bottleneck analysis.' : 'Recommendation language will unlock after the decision engine returns.'}</span>

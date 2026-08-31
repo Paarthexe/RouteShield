@@ -1,5 +1,5 @@
-import React from 'react';
-import { Fuel, AlertTriangle, Gauge, MapPinned, Zap } from 'lucide-react';
+import React, { useState } from 'react';
+import { Fuel, AlertTriangle, Gauge, MapPinned, Zap, ChevronDown, ChevronUp } from 'lucide-react';
 
 const TONE_STYLES = {
   amber: {
@@ -19,7 +19,7 @@ const TONE_STYLES = {
 function getEvReadiness(chargers = [], routeDistanceKm = 0) {
   if (!chargers.length) {
     return {
-      label: 'No EV fast charging coverage',
+      label: 'No EV Fast Charging Coverage',
       tone: 'rose',
       detail: 'No candidate EV fast-charging sites were identified along this corridor.',
     };
@@ -57,6 +57,8 @@ function getEvReadiness(chargers = [], routeDistanceKm = 0) {
 }
 
 export default function FuelReadinessPanel({ route }) {
+  const [showFuelStops, setShowFuelStops] = useState(false);
+  const [showFastEv, setShowFastEv] = useState(false);
   if (!route) return null;
 
   const infra = route.infrastructure;
@@ -64,16 +66,24 @@ export default function FuelReadinessPanel({ route }) {
 
   const orderedStops = [...(infra.gas_stations || [])].sort((a, b) => a.distance_from_origin_km - b.distance_from_origin_km);
   const orderedChargers = [...(infra.ev_chargers || [])].sort((a, b) => a.distance_from_origin_km - b.distance_from_origin_km);
+  const fastChargers = [...(infra.ev_fast_stations || [])].sort((a, b) => a.distance_from_origin_km - b.distance_from_origin_km);
+  const fuelWarning = infra.fuel_desert_warning?.split(';').map((part) => part.trim()).find((part) => part.toLowerCase().includes('fuel desert')) || null;
+  const evWarning = infra.fuel_desert_warning?.split(';').map((part) => part.trim()).find((part) => part.toLowerCase().includes('ev fast charging desert')) || null;
   const routeDistanceKm = route.distance_km || 0;
   const firstStopKm = orderedStops[0]?.distance_from_origin_km ?? null;
   const lastStopKm = orderedStops[orderedStops.length - 1]?.distance_from_origin_km ?? null;
   const isFuelDesert = (infra.max_gas_gap_km || 0) > 45;
   const readiness = {
-    label: isFuelDesert ? 'Fuel desert risk detected' : 'Fuel corridor coverage available',
+    label: isFuelDesert ? 'Fuel Desert Risk Detected' : 'Fuel corridor coverage available',
     tone: isFuelDesert ? 'rose' : 'amber',
-    detail: infra.fuel_desert_warning || `Longest gas gap is ${Math.round(infra.max_gas_gap_km || 0)} km along this corridor.`,
+    detail: fuelWarning || `Longest fuel gap is ${Math.round(infra.max_gas_gap_km || 0)} km along this corridor.`,
   };
   const evReadiness = getEvReadiness(orderedChargers, routeDistanceKm);
+  if (evWarning) {
+    evReadiness.label = 'EV Charging Desert Risk Detected';
+    evReadiness.tone = 'rose';
+    evReadiness.detail = evWarning;
+  }
   const tone = TONE_STYLES[readiness.tone] || TONE_STYLES.rose;
   const evTone = TONE_STYLES[evReadiness.tone] || TONE_STYLES.amber;
   const ToneIcon = tone.icon;
@@ -144,11 +154,17 @@ export default function FuelReadinessPanel({ route }) {
 
       {orderedStops.length > 0 && (
         <div className="space-y-2">
-          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">
-            <Fuel className="h-3.5 w-3.5" />
-            Fuel Stops
-          </div>
-          {orderedStops.map((stop, idx) => (
+          <button
+            onClick={() => setShowFuelStops(!showFuelStops)}
+            className="w-full flex items-center justify-between rounded-lg border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-left cursor-pointer"
+          >
+            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">
+              <Fuel className="h-3.5 w-3.5" />
+              Fuel Stops ({orderedStops.length})
+            </span>
+            {showFuelStops ? <ChevronUp className="h-4 w-4 text-amber-300" /> : <ChevronDown className="h-4 w-4 text-amber-300" />}
+          </button>
+          {showFuelStops && orderedStops.map((stop, idx) => (
             <div key={`${stop.name}_${idx}`} className="bg-zinc-950/80 border border-zinc-850 rounded-lg p-2.5 flex items-start gap-2.5">
               <div className="p-1 rounded-md bg-amber-950/80 border border-amber-800/60 text-amber-300 shrink-0 mt-0.5">
                 <MapPinned className="h-3.5 w-3.5" />
@@ -175,11 +191,17 @@ export default function FuelReadinessPanel({ route }) {
 
       {orderedChargers.length > 0 && (
         <div className="space-y-2">
-          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-teal-300">
-            <Zap className="h-3.5 w-3.5" />
-            EV Charging Sites
-          </div>
-          {orderedChargers.map((charger, idx) => (
+          <button
+            onClick={() => setShowFastEv(!showFastEv)}
+            className="w-full flex items-center justify-between rounded-lg border border-teal-800/40 bg-teal-950/20 px-3 py-2 text-left cursor-pointer"
+          >
+            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-teal-300">
+              <Zap className="h-3.5 w-3.5" />
+              Fast EV ({fastChargers.length})
+            </span>
+            {showFastEv ? <ChevronUp className="h-4 w-4 text-teal-300" /> : <ChevronDown className="h-4 w-4 text-teal-300" />}
+          </button>
+          {showFastEv && fastChargers.map((charger, idx) => (
             <div key={`${charger.name}_${idx}`} className="bg-zinc-950/80 border border-zinc-850 rounded-lg p-2.5 flex items-start gap-2.5">
               <div className="p-1 rounded-md bg-teal-950/80 border border-teal-800/60 text-teal-300 shrink-0 mt-0.5">
                 <Zap className="h-3.5 w-3.5" />
