@@ -36,6 +36,7 @@ class RouteSample(BaseModel):
     distance_from_origin_m: float
     nbi_bridges: Optional[List[Dict[str, Any]]] = None
     mireye_data: Optional[Dict[str, Any]] = None
+    traffic_flow: Optional[Dict[str, Any]] = None
     hazards: Optional[List[Dict[str, Any]]] = None
     slope_pct: Optional[float] = None
     hazard_score: Optional[float] = None

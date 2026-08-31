@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Polyline, Marker, Popup, CircleMarker, Circle, Polygon, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Marker, Popup, Tooltip, CircleMarker, Circle, Polygon, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { MapPin, Navigation, Compass, CheckCircle2, XCircle, ShieldAlert, Trash2, Ban, Flame } from 'lucide-react';
 
@@ -610,6 +610,73 @@ export default function MapView({
 
           return (
             <React.Fragment key={route.route_id}>
+              {(() => {
+                const trafficSamples = (route.samples || []).filter((sample) => sample.traffic_flow && sample.traffic_flow.current_speed_kmh);
+                if (!trafficSamples.length) {
+                  return (
+                    <Polyline
+                      positions={positions}
+                      eventHandlers={{
+                        click: () => onSelectRoute(route.route_id)
+                      }}
+                      pathOptions={{
+                        color: strokeColor,
+                        weight: isSelected ? 22 : 24,
+                        opacity: 0,
+                        lineCap: 'round',
+                        lineJoin: 'round'
+                      }}
+                    />
+                  );
+                }
+
+                const avgSpeed = Math.round(
+                  trafficSamples.reduce((sum, sample) => sum + (sample.traffic_flow.current_speed_kmh || 0), 0) / trafficSamples.length
+                );
+                const hasClosure = trafficSamples.some((sample) => sample.traffic_flow?.road_closed);
+                const heavyCount = trafficSamples.filter((sample) => sample.traffic_flow?.congestion_condition === 'Heavy Congestion').length;
+                const moderateCount = trafficSamples.filter((sample) => sample.traffic_flow?.congestion_condition === 'Moderate Traffic').length;
+                const lowCount = trafficSamples.filter((sample) => sample.traffic_flow?.congestion_condition === 'Low Traffic').length;
+                const totalCount = trafficSamples.length;
+                const heavyShare = heavyCount / totalCount;
+                const moderateShare = moderateCount / totalCount;
+                const lowShare = lowCount / totalCount;
+                const condition = hasClosure
+                  ? 'Road Closed'
+                  : heavyShare >= 0.25
+                  ? 'Heavy Congestion'
+                  : heavyShare + moderateShare >= 0.35
+                  ? 'Moderate Traffic'
+                  : lowShare >= 0.3 || avgSpeed < 95
+                  ? 'Low Traffic'
+                  : 'Free Flow';
+
+                return (
+                  <Polyline
+                    positions={positions}
+                    eventHandlers={{
+                      click: () => onSelectRoute(route.route_id)
+                    }}
+                    pathOptions={{
+                      color: strokeColor,
+                      weight: isSelected ? 22 : 24,
+                      opacity: 0,
+                      lineCap: 'round',
+                      lineJoin: 'round'
+                    }}
+                  >
+                    <Tooltip sticky permanent={false} interactive={false} direction="top" offset={[0, -6]} opacity={0.96} className="rs-route-traffic-tooltip">
+                      <div className="flex items-center gap-2 font-mono text-[10px] leading-none">
+                        <span className="font-bold text-slate-100">{avgSpeed} km/h</span>
+                        <span className={hasClosure ? 'text-rose-300' : condition === 'Heavy Congestion' ? 'text-amber-300' : condition === 'Moderate Traffic' ? 'text-sky-300' : condition === 'Low Traffic' ? 'text-slate-300' : 'text-emerald-300'}>
+                          {condition}
+                        </span>
+                      </div>
+                    </Tooltip>
+                  </Polyline>
+                );
+              })()}
+
               {/* Outer Glow for Selected Route */}
               {isSelected && (
                 <Polyline
@@ -692,6 +759,17 @@ export default function MapView({
                       Bridges nearby: {sample.nbi_bridges.length}
                     </div>
                   )}
+                  {sample.traffic_flow && (
+                    <div className="text-[10px] text-emerald-300 font-mono mt-1 border-t border-slate-800 pt-1 space-y-0.5">
+                      <div>
+                        Traffic: {sample.traffic_flow.current_speed_kmh} km/h ({sample.traffic_flow.congestion_condition})
+                      </div>
+                      <div className="text-slate-400">
+                        Free flow: {sample.traffic_flow.free_flow_speed_kmh} km/h
+                        {sample.traffic_flow.road_closed ? ' · Road Closed' : ''}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </Popup>
             );
@@ -706,6 +784,14 @@ export default function MapView({
                     click: () => onSelectSample(sample)
                   }}
                 >
+                  {sample.traffic_flow && (
+                    <Tooltip direction="top" offset={[0, -10]} opacity={0.96}>
+                      <div className="font-mono text-[10px]">
+                        <div className="font-bold text-emerald-300">🚦 {sample.traffic_flow.current_speed_kmh} km/h</div>
+                        <div className="text-slate-300">{sample.traffic_flow.congestion_condition}</div>
+                      </div>
+                    </Tooltip>
+                  )}
                   {popupContent}
                 </Marker>
               );
@@ -726,6 +812,14 @@ export default function MapView({
                   weight: isSampleSelected ? 2 : 1
                 }}
               >
+                {sample.traffic_flow && (
+                  <Tooltip direction="top" offset={[0, -8]} opacity={0.96}>
+                    <div className="font-mono text-[10px]">
+                      <div className="font-bold text-emerald-300">🚦 {sample.traffic_flow.current_speed_kmh} km/h</div>
+                      <div className="text-slate-300">{sample.traffic_flow.congestion_condition}</div>
+                    </div>
+                  </Tooltip>
+                )}
                 {popupContent}
               </CircleMarker>
             );

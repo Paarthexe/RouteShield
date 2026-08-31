@@ -119,28 +119,35 @@ export default function AgentBriefing({ agentDecision }) {
       )}
 
       {/* Route Classification Grid */}
-      <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-mono pt-1">
+      <div className={`grid gap-2 text-center text-[11px] font-mono pt-1 ${rejected_route_ids.length > 0 ? 'grid-cols-3' : backup_route_id ? 'grid-cols-2' : 'grid-cols-1'}`}>
         <div className="bg-zinc-950 border border-emerald-900/40 rounded-lg p-2">
           <span className="text-[10px] text-emerald-400 font-bold block mb-0.5">PRIMARY</span>
           <span className="text-zinc-200 font-semibold">
             {primary_route_id ? primary_route_id.toUpperCase().replace('_', ' ') : '-'}
           </span>
         </div>
-        <div className="bg-zinc-950 border border-blue-900/40 rounded-lg p-2">
-          <span className="text-[10px] text-blue-400 font-bold block mb-0.5">BACKUP</span>
-          <span className="text-zinc-200 font-semibold">
-            {backup_route_id ? backup_route_id.toUpperCase().replace('_', ' ') : '-'}
-          </span>
-        </div>
+        {backup_route_id ? (
+          <div className="bg-zinc-950 border border-blue-900/40 rounded-lg p-2">
+            <span className="text-[10px] text-blue-400 font-bold block mb-0.5">BACKUP</span>
+            <span className="text-zinc-200 font-semibold">
+              {backup_route_id.toUpperCase().replace('_', ' ')}
+            </span>
+          </div>
+        ) : rejected_route_ids.length > 0 ? (
+          <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-2">
+            <span className="text-[10px] text-zinc-400 font-bold block mb-0.5">BACKUP</span>
+            <span className="text-zinc-500 font-semibold">None</span>
+          </div>
+        ) : null}
 
-        <div className="bg-zinc-950 border border-rose-900/40 rounded-lg p-2">
-          <span className="text-[10px] text-rose-400 font-bold block mb-0.5">HIGH RISK</span>
-          <span className="text-zinc-200 font-semibold truncate block" title={rejected_route_ids.join(', ')}>
-            {rejected_route_ids.length > 0
-              ? rejected_route_ids.map(id => id.toUpperCase().replace('_', ' ')).join(', ')
-              : 'None'}
-          </span>
-        </div>
+        {rejected_route_ids.length > 0 && (
+          <div className="bg-zinc-950 border border-rose-900/40 rounded-lg p-2">
+            <span className="text-[10px] text-rose-400 font-bold block mb-0.5">HIGH RISK</span>
+            <span className="text-zinc-200 font-semibold truncate block" title={rejected_route_ids.join(', ')}>
+              {rejected_route_ids.map(id => id.toUpperCase().replace('_', ' ')).join(', ')}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Collapsible Technical Decision Trace */}

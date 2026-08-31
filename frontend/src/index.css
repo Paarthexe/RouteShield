@@ -540,6 +540,32 @@ code, pre, .font-mono {
   }
 }
 
+/* ─── Route traffic hover tooltip ─────────────────────────────── */
+.rs-route-traffic-tooltip .leaflet-tooltip {
+  background: #000000 !important;
+  border: 1px solid rgba(63, 63, 70, 0.9) !important;
+  color: #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
+  padding: 5px 7px;
+}
+
+.rs-route-traffic-tooltip.leaflet-tooltip,
+.leaflet-tooltip.rs-route-traffic-tooltip {
+  background: #000000 !important;
+  border: 1px solid rgba(63, 63, 70, 0.9) !important;
+  color: #e2e8f0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38) !important;
+  padding: 5px 7px !important;
+}
+
+.rs-route-traffic-tooltip.leaflet-tooltip-top:before,
+.rs-route-traffic-tooltip .leaflet-tooltip-top:before,
+.leaflet-tooltip-top.rs-route-traffic-tooltip:before {
+  border-top-color: #000000 !important;
+}
+
 /* ─── Spinner keyframe (used inline) ────────────────────────── */
 @keyframes spin {
   to { transform: rotate(360deg); }

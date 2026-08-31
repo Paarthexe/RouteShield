@@ -63,6 +63,29 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
     ? Math.round((route.travel_time_min - fastestDuration) * 10) / 10
     : 0;
 
+  const trafficSamples = (route.samples || []).filter((sample) => sample.traffic_flow && sample.traffic_flow.current_speed_kmh);
+  const avgTrafficSpeed = trafficSamples.length
+    ? Math.round(trafficSamples.reduce((sum, sample) => sum + (sample.traffic_flow.current_speed_kmh || 0), 0) / trafficSamples.length)
+    : null;
+  const hasRoadClosure = trafficSamples.some((sample) => sample.traffic_flow?.road_closed);
+  const heavyTrafficCount = trafficSamples.filter((sample) => sample.traffic_flow?.congestion_condition === 'Heavy Congestion').length;
+  const moderateTrafficCount = trafficSamples.filter((sample) => sample.traffic_flow?.congestion_condition === 'Moderate Traffic').length;
+  const lowTrafficCount = trafficSamples.filter((sample) => sample.traffic_flow?.congestion_condition === 'Low Traffic').length;
+  const heavyTrafficShare = trafficSamples.length ? heavyTrafficCount / trafficSamples.length : 0;
+  const moderateTrafficShare = trafficSamples.length ? moderateTrafficCount / trafficSamples.length : 0;
+  const lowTrafficShare = trafficSamples.length ? lowTrafficCount / trafficSamples.length : 0;
+  const worstTrafficLabel = hasRoadClosure
+    ? 'Road Closed'
+    : heavyTrafficShare >= 0.25
+    ? 'Heavy Congestion'
+    : heavyTrafficShare + moderateTrafficShare >= 0.35
+    ? 'Moderate Traffic'
+    : lowTrafficShare >= 0.3 || (avgTrafficSpeed != null && avgTrafficSpeed < 95)
+    ? 'Low Traffic'
+    : trafficSamples.length
+    ? 'Free Flow'
+    : null;
+
   return (
     <div
       onClick={onSelect}
@@ -228,6 +251,16 @@ export default function RouteCard({ route, isSelected, onSelect, fastestDuration
             </span>
             <span className="text-purple-300 font-bold">
               {route.comm_dead_zones.reduce((acc, d) => acc + d.length_km, 0).toFixed(1)} km total
+            </span>
+          </div>
+        )}
+        {avgTrafficSpeed && (
+          <div className="py-1 px-2.5 bg-emerald-950/30 border border-emerald-800/50 rounded-lg text-[11px] flex items-center justify-between font-mono gap-2">
+            <span className="text-emerald-300 flex items-center gap-1 min-w-0">
+              <span>🚦</span> Traffic
+            </span>
+            <span className={`font-bold text-right ${hasRoadClosure ? 'text-rose-300' : 'text-emerald-300'}`}>
+              {avgTrafficSpeed} km/h · {worstTrafficLabel}
             </span>
           </div>
         )}

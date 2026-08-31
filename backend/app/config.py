@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     MIREYE_BASE_URL: str = "https://api.mireye.com/v1"
     MIREYE_MAX_PROBES: int = 6
     MIREYE_MAX_CONCURRENCY: int = 4
+    TOMTOM_API_KEY: str = ""
     
     # OSRM Routing Engine URL
     OSRM_BASE_URL: str = "http://router.project-osrm.org"

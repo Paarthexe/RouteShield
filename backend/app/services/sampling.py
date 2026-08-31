@@ -6,6 +6,7 @@ from app.utils.geo import haversine_distance, interpolate_coordinate
 from app.services.nbi_service import nbi_service
 from app.services.mireye_service import mireye_data_service
 from app.services.open_meteo_service import open_meteo_service
+from app.services.traffic_service import traffic_service
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,8 @@ class SamplingService:
         geometry: GeoJSONLineString,
         interval_m: float = 500.0,
         disaster_type: str = "ALL_HAZARDS",
-        hazard_barriers: Optional[List[HazardBarrier]] = None
+        hazard_barriers: Optional[List[HazardBarrier]] = None,
+        estimated_duration_s: Optional[float] = None,
     ) -> List[RouteSample]:
         coords = geometry.coordinates
         if not coords:
@@ -28,6 +30,8 @@ class SamplingService:
         if len(coords) == 1:
             lon, lat = coords[0]
             om_elevs = await open_meteo_service.fetch_elevations_bulk([(lat, lon)])
+            rt_alerts = await traffic_service.fetch_point_alerts(lat, lon)
+            tt_flow = await traffic_service.fetch_tomtom_traffic_flow(lat, lon)
             om_data = om_elevs[0] if om_elevs else None
 
             combined_facts = {}
@@ -51,6 +55,8 @@ class SamplingService:
                     distance_from_origin_m=0.0,
                     nbi_bridges=nbi_service.get_nearby_bridges(lat, lon, radius_m=300.0),
                     mireye_data=combined_facts if combined_facts else None,
+                    hazards=rt_alerts or None,
+                    traffic_flow=tt_flow if tt_flow else None,
                     is_mireye_probed=False,
                     is_barrier_blocked=is_blocked
                 )
@@ -130,6 +136,38 @@ class SamplingService:
             f"for Mireye deep probe at indices {list(critical_indices)}"
         )
 
+        traffic_indices = self._select_traffic_sample_points(
+            len(point_targets),
+            critical_indices,
+            total_distance_m=total_distance,
+            max_probes=25,
+        )
+
+        traffic_tasks = {
+            idx: traffic_service.fetch_tomtom_traffic_flow(point_targets[idx][0], point_targets[idx][1])
+            for idx in sorted(traffic_indices)
+            if 0 <= idx < len(point_targets)
+        }
+        traffic_alert_points = [(lat, lon) for (lat, lon, _) in point_targets]
+        traffic_raw_res, traffic_alerts_res = await asyncio.gather(
+            asyncio.gather(*traffic_tasks.values(), return_exceptions=True) if traffic_tasks else asyncio.sleep(0, result=[]),
+            traffic_service.fetch_corridor_alerts(traffic_alert_points),
+        )
+
+        traffic_fetched: Dict[int, Dict[str, Any]] = {}
+        if traffic_tasks:
+            for idx_key, res in zip(traffic_tasks.keys(), traffic_raw_res):
+                if isinstance(res, dict):
+                    traffic_fetched[idx_key] = res
+
+        def get_closest_traffic_flow(sample_idx: int) -> Optional[Dict[str, Any]]:
+            if not traffic_fetched:
+                return None
+            if sample_idx in traffic_fetched:
+                return traffic_fetched[sample_idx]
+            closest_idx = min(traffic_fetched.keys(), key=lambda k: abs(k - sample_idx))
+            return traffic_fetched[closest_idx]
+
         # ====================================================================
         # PHASE 5: Mireye /v1/fetch on critical points (disaster-aware strategy)
         # ====================================================================
@@ -183,6 +221,8 @@ class SamplingService:
             # Start with Open-Meteo data
             facts = {}
             om_data = om_results[idx] if idx < len(om_results) and isinstance(om_results[idx], dict) else None
+            rt_alerts = traffic_alerts_res[idx] if idx < len(traffic_alerts_res) and isinstance(traffic_alerts_res[idx], list) else []
+            tt_flow = get_closest_traffic_flow(idx)
             if om_data and "elevation_m" in om_data:
                 facts["elevation_m"] = om_data["elevation_m"]
                 facts["elevation_source"] = om_data["elevation_source"]
@@ -218,6 +258,8 @@ class SamplingService:
                     distance_from_origin_m=dist_m,
                     nbi_bridges=nbi_results[idx] if nbi_results[idx] else None,
                     mireye_data=facts if facts else None,
+                    hazards=rt_alerts or None,
+                    traffic_flow=tt_flow if tt_flow else None,
                     slope_pct=slopes[idx],
                     is_mireye_probed=is_probed,
                     is_barrier_blocked=is_blocked
@@ -362,6 +404,24 @@ class SamplingService:
         # Respect a lower configured budget without ever exceeding it.
         return set(sorted(selected)[:max_probes])
 
+    def _select_traffic_sample_points(
+        self,
+        n: int,
+        critical_indices: Set[int],
+        total_distance_m: float = 0.0,
+        max_probes: int = 25,
+    ) -> Set[int]:
+        if n == 0:
+            return set()
+        indices = set(critical_indices)
+        indices.add(0)
+        indices.add(n - 1)
+        target_probes = min(max_probes, max(5, int(total_distance_m / 3000.0)))
+        step = max(1, n // target_probes)
+        for idx in range(0, n, step):
+            indices.add(idx)
+        return indices
+
     def _find_point_at_distance(
         self,
         coords: List[List[float]],
@@ -396,3 +456,32 @@ class SamplingService:
         return lat, lon
 
 sampling_service = SamplingService()
+
+
+def compute_traffic_adjusted_duration(samples: List[RouteSample], fallback_duration_s: float) -> float:
+    if not samples or len(samples) < 2:
+        return fallback_duration_s
+
+    has_traffic = any(s.traffic_flow and s.traffic_flow.get("current_speed_kmh") for s in samples)
+    if not has_traffic:
+        return fallback_duration_s
+
+    total_traffic_s = 0.0
+    total_dist_m = samples[-1].distance_from_origin_m
+    fallback_speed_ms = (total_dist_m / fallback_duration_s) if fallback_duration_s > 0 else 13.88
+
+    for i in range(len(samples) - 1):
+        s1 = samples[i]
+        s2 = samples[i + 1]
+        dist_seg_m = s2.distance_from_origin_m - s1.distance_from_origin_m
+        if dist_seg_m <= 0:
+            continue
+
+        tf = s1.traffic_flow
+        speed_kmh = tf.get("current_speed_kmh", 0.0) if tf else 0.0
+        if speed_kmh > 1.0:
+            total_traffic_s += dist_seg_m / (speed_kmh / 3.6)
+        else:
+            total_traffic_s += dist_seg_m / max(1.0, fallback_speed_ms)
+
+    return round(total_traffic_s, 1)

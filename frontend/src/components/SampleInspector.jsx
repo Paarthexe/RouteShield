@@ -7,6 +7,7 @@ export default function SampleInspector({ sample, onClose }) {
   const distKm = (sample.distance_from_origin_m / 1000.0).toFixed(2);
   const bridges = sample.nbi_bridges || [];
   const mireye = sample.mireye_data || null;
+  const traffic = sample.traffic_flow || null;
   const isMireyeProbed = sample.is_mireye_probed;
   const slopePct = sample.slope_pct;
   const hazardScore = sample.hazard_score;
@@ -81,6 +82,42 @@ export default function SampleInspector({ sample, onClose }) {
           </span>
         </div>
       </div>
+
+      {traffic && (
+        <div className="rounded-lg border border-emerald-900/40 bg-emerald-950/20 p-3 text-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <h5 className="text-[11px] font-bold text-emerald-300 font-mono uppercase tracking-wider flex items-center gap-1.5">
+              <Zap className="h-3.5 w-3.5 text-emerald-300" /> Real-Time Traffic
+            </h5>
+            <span className="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-800/60 px-1.5 py-0.5 rounded font-mono">
+              {traffic.source || 'TomTom'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+              <span className="text-[9px] text-slate-400 block uppercase">Current Speed</span>
+              <span className="text-xs font-bold text-emerald-300">{traffic.current_speed_kmh ?? '--'} km/h</span>
+            </div>
+            <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+              <span className="text-[9px] text-slate-400 block uppercase">Free Flow</span>
+              <span className="text-xs font-bold text-slate-200">{traffic.free_flow_speed_kmh ?? '--'} km/h</span>
+            </div>
+            <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+              <span className="text-[9px] text-slate-400 block uppercase">Condition</span>
+              <span className={`text-xs font-bold ${traffic.road_closed ? 'text-rose-400' : traffic.congestion_condition === 'Heavy Congestion' ? 'text-amber-300' : traffic.congestion_condition === 'Moderate Traffic' ? 'text-sky-300' : traffic.congestion_condition === 'Low Traffic' ? 'text-slate-300' : 'text-emerald-300'}`}>
+                {traffic.congestion_condition || 'Unknown'}
+              </span>
+            </div>
+            <div className="bg-slate-900/80 p-2 rounded border border-slate-800">
+              <span className="text-[9px] text-slate-400 block uppercase">Road Status</span>
+              <span className={`text-xs font-bold ${traffic.road_closed ? 'text-rose-400' : 'text-slate-200'}`}>
+                {traffic.road_closed ? 'Closed' : 'Open'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Slope & Hazard Score Row */}
       {(slopePct != null || hazardScore != null) && (
