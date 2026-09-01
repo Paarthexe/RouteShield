@@ -5,8 +5,23 @@ from typing import List, Dict, Any, Optional
 from app.config import settings
 from app.models.route_models import Route, AARCaseStudy
 from app.services.cache import cache_service
+from app.services.geocoding import geocoding_service
 
 logger = logging.getLogger(__name__)
+
+
+def map_fema_incident_filter(disaster_type: str) -> Optional[str]:
+    """Map RouteShield disaster types to OpenFEMA OData incidentType filters."""
+    dt = (disaster_type or "").upper()
+    if "WILD" in dt or "FIRE" in dt:
+        return "incidentType eq 'Fire'"
+    elif "FLOOD" in dt or "HURRICANE" in dt:
+        return "(incidentType eq 'Flood' or incidentType eq 'Severe Storm' or incidentType eq 'Hurricane')"
+    elif "QUAKE" in dt:
+        return "incidentType eq 'Earthquake'"
+    elif "SLIDE" in dt:
+        return "(incidentType eq 'Mud/Landslide' or incidentType eq 'Severe Storm')"
+    return None
 
 
 class AARService:
@@ -56,7 +71,7 @@ class AARService:
         return alerts
 
     async def _fetch_fema_historical_disasters(self, lat: float, lon: float, disaster_type: str) -> List[AARCaseStudy]:
-        """Query OpenFEMA API dynamically for real past declared disasters and parse directly."""
+        """Query OpenFEMA API dynamically filtered by route state and disaster protocol."""
         studies: List[AARCaseStudy] = []
         cache_key = f"fema:aar:live_api:{round(lat, 2)},{round(lon, 2)}:{disaster_type}"
         cached = cache_service.get(cache_key)
@@ -66,6 +81,17 @@ class AARService:
             except Exception:
                 pass
 
+        state_code = await geocoding_service.reverse_lookup_state(lat, lon)
+        incident_filter = map_fema_incident_filter(disaster_type)
+
+        filter_clauses = []
+        if state_code:
+            filter_clauses.append(f"state eq '{state_code}'")
+        if incident_filter:
+            filter_clauses.append(incident_filter)
+
+        filter_str = " and ".join(filter_clauses) if filter_clauses else None
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 params = {
@@ -73,7 +99,16 @@ class AARService:
                     "$orderby": "declarationDate desc",
                     "$select": "incidentType,declarationTitle,fyDeclared,designatedArea,fipsStateCode,state,declarationDate,disasterNumber"
                 }
+                if filter_str:
+                    params["$filter"] = filter_str
+
                 resp = await client.get(self.fema_api_url, params=params)
+
+                # If specific disaster filter returned 0, try with state-only filter
+                if resp.status_code == 200 and not resp.json().get("DisasterDeclarationsSummaries") and state_code:
+                    params["$filter"] = f"state eq '{state_code}'"
+                    resp = await client.get(self.fema_api_url, params=params)
+
                 if resp.status_code == 200:
                     data = resp.json()
                     records = data.get("DisasterDeclarationsSummaries", [])
@@ -82,7 +117,7 @@ class AARService:
                         inc_type = r.get("incidentType", "Disaster")
                         year = int(r.get("fyDeclared", datetime.now().year))
                         county = r.get("designatedArea", "Designated County")
-                        state = r.get("state", "US")
+                        state = r.get("state", state_code or "US")
                         disaster_num = r.get("disasterNumber", "FEMA")
                         decl_date = (r.get("declarationDate") or "")[:10]
 
@@ -143,7 +178,7 @@ class AARService:
         """Match and deduplicate live NWS alerts & FEMA AAR case studies across all corridors."""
         if not routes:
             return []
-        
+
         all_studies: List[AARCaseStudy] = []
         for r in routes:
             studies = await self.match_route_aar_case_studies(r, disaster_type=disaster_type)

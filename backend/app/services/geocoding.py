@@ -154,6 +154,40 @@ class GeocodingService:
             logger.warning(f"Nominatim geocode fallback failed for '{query}': {e}")
         return None
 
+    async def reverse_lookup_state(self, lat: float, lon: float) -> Optional[str]:
+        """Reverse geocode coordinate to US state code via standard NOAA points or Nominatim reverse API."""
+        cache_key = f"rev_state:{round(lat, 3)},{round(lon, 3)}"
+        cached = cache_service.get(cache_key)
+        if cached:
+            return cached
+        try:
+            headers = {"User-Agent": "RouteShield-EvacuationIntelligence/2.0"}
+            async with httpx.AsyncClient(timeout=4.0, headers=headers) as client:
+                # 1. Try official NOAA NWS points endpoint (instantaneous for US coordinates)
+                nws_res = await client.get(f"https://api.weather.gov/points/{round(lat, 4)},{round(lon, 4)}")
+                if nws_res.status_code == 200:
+                    state = nws_res.json().get("properties", {}).get("relativeLocation", {}).get("properties", {}).get("state")
+                    if state:
+                        cache_service.set(cache_key, state, ttl_seconds=86400)
+                        return state
+
+                # 2. Standard Nominatim reverse geocode fallback
+                nom_res = await client.get(
+                    "https://nominatim.openstreetmap.org/reverse",
+                    params={"lat": lat, "lon": lon, "format": "json"}
+                )
+                if nom_res.status_code == 200:
+                    addr = nom_res.json().get("address", {})
+                    iso = addr.get("ISO3166-2-lvl4", "")
+                    state = iso.split("-")[-1] if "-" in iso else addr.get("state")
+                    if state:
+                        cache_service.set(cache_key, state, ttl_seconds=86400)
+                        return state
+        except Exception as e:
+            logger.debug(f"Reverse state lookup notice for ({lat}, {lon}): {e}")
+        return None
+
 
 geocoding_service = GeocodingService()
+
 
