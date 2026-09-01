@@ -26,7 +26,9 @@ Settings are read from `.env` in the backend directory or repository root.
 | `MIREYE_BASE_URL` | `https://api.mireye.com/v1` | Mireye API base URL |
 | `MIREYE_MAX_PROBES` | `6` | Maximum targeted probes per route |
 | `MIREYE_MAX_CONCURRENCY` | `4` | Concurrent Mireye requests |
+| `TOMTOM_API_KEY` | empty | Enables TomTom real-time traffic flow speeds and road closures |
 | `OSRM_BASE_URL` | `http://router.project-osrm.org` | OSRM API base URL |
+
 | `ROUTE_SAMPLE_INTERVAL_M` | `500` | Default sample spacing in metres |
 | `CACHE_DB_PATH` | `./data/routeshield_cache.db` | SQLite cache location |
 | `ENABLE_CACHE` | `true` | Cache toggle |

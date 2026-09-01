@@ -18,7 +18,9 @@ It produces a primary evacuation corridor when one is viable, provides a best-av
 - Estimates affected population exposure and evacuation clearance times using US Census demographic density and TRB NCHRP 752 ETE guidelines.
 - Collects real-time weather conditions and wind vector alignment along routes via Open-Meteo.
 - Ingests live NOAA/NWS active emergency alerts and OpenFEMA federal disaster declaration summaries.
+- Collects real-time traffic flow speeds and road closure data through TomTom when configured.
 - Locates live OpenStreetMap emergency shelters, hospitals, fire stations, and refueling stops along corridors via Overpass.
+
 - Identifies communication and cellular dead zones in steep canyons and mountain passes.
 - Scores bottlenecks from hazard risk, bridge vulnerability, and terrain slope.
 - Scores route viability, rejects fragile corridors, checks backup-route independence, and designates the most feasible contingency corridor even under severe hazard conditions.
@@ -101,6 +103,7 @@ Create a root `.env` file from `.env.example` and set the services you intend to
 ```env
 MIREYE_API_KEY=your_mireye_api_key
 MIREYE_BASE_URL=https://api.mireye.com/v1
+TOMTOM_API_KEY=your_tomtom_api_key
 OSRM_BASE_URL=http://router.project-osrm.org
 ROUTE_SAMPLE_INTERVAL_M=500
 ENABLE_CACHE=true
@@ -134,7 +137,8 @@ docker compose up --build
 
 ## Data and service setup
 
-OSRM provides route geometry. Open-Meteo provides elevation and real-time weather. Mireye provides geocoding and physical-world hazard data. NOAA and OpenFEMA provide hazard alerts and disaster records. The US Census Bureau provides population data. Overpass provides emergency shelter and refueling infrastructure.
+OSRM provides route geometry. Open-Meteo provides elevation and real-time weather. Mireye provides geocoding and physical-world hazard data. TomTom provides live traffic flow speeds and road closures. NOAA and OpenFEMA provide hazard alerts and disaster records. The US Census Bureau provides population data. Overpass provides emergency shelter and refueling infrastructure.
+
 
 ## Tests
 
