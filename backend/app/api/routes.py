@@ -24,7 +24,10 @@ from app.services.poi_service import poi_service
 from app.services.connectivity_service import connectivity_service
 from app.services.aar_service import aar_service
 from app.services.isochrone_service import isochrone_service
+from app.services.scraper_service import scraper_service
+from app.models.route_models import ScrapedEmergencyNotice
 from app.config import settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +132,7 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
     for r in routes:
         _safe_sync(None, "Connectivity analysis", connectivity_service.detect_communication_dead_zones, r)
 
-    # 3. Concurrent retrieval of Tier 1 intelligence: weather, population exposure, capacity analysis, incidents, shelters
+    # 3. Concurrent retrieval of Tier 1 intelligence: weather, population exposure, capacity analysis, incidents, shelters, and live web scraper alerts
     weather_task = _safe_async(None, "Weather snapshot", weather_service.get_route_weather_snapshot(
         origin_coord.latitude, origin_coord.longitude,
         dest_coord.latitude, dest_coord.longitude
@@ -141,9 +144,12 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
         origin_coord.latitude, origin_coord.longitude, disaster_type=disaster_mode
     ))
     shelters_task = _safe_async([], "Shelter/POI search", poi_service.find_corridor_shelters_and_pois(routes))
+    scraper_task = _safe_async([], "Web scraper live alerts", scraper_service.scrape_live_corridor_alerts(
+        origin_coord.latitude, origin_coord.longitude, disaster_type=disaster_mode
+    ))
 
-    weather_snapshot, population_exposure, historical_incidents, shelters = await asyncio.gather(
-        weather_task, population_task, incidents_task, shelters_task
+    weather_snapshot, population_exposure, historical_incidents, shelters, scraped_updates = await asyncio.gather(
+        weather_task, population_task, incidents_task, shelters_task, scraper_task
     )
 
     # Network-wide road capacity & contraflow evaluation
@@ -180,8 +186,23 @@ async def analyze_corridor(payload: RouteAnalyzeRequest):
         capacity_analysis=network_capacity,
         aar_case_studies=all_aar_studies,
         time_cutoff=primary_ttc,
-        hazard_isochrones=hazard_isochrones
+        hazard_isochrones=hazard_isochrones,
+        scraped_live_updates=scraped_updates
     )
+
+
+@router.get("/live-web-alerts", response_model=List[ScrapedEmergencyNotice])
+async def get_live_web_alerts(
+    latitude: float = Query(..., description="Corridor latitude"),
+    longitude: float = Query(..., description="Corridor longitude"),
+    disaster_type: str = Query("ALL_HAZARDS", description="Active disaster protocol")
+):
+    """
+    Live web scraper endpoint fetching real-time emergency web bulletins,
+    DOT road conditions, and NWS active alerts.
+    """
+    return await scraper_service.scrape_live_corridor_alerts(latitude, longitude, disaster_type=disaster_type)
+
 
 
 @router.get("/{route_id}/live")

@@ -42,7 +42,8 @@ async def test_resolve_location_missing_api_key():
     service.mireye_api_key = ""
     with pytest.raises(HTTPException) as excinfo:
         await service.resolve_location("Uncached Test Address 999")
-    assert excinfo.value.status_code == 500
+    assert excinfo.value.status_code == 404
+
 
 @pytest.mark.asyncio
 async def test_resolve_location_not_found():

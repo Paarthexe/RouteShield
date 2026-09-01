@@ -304,11 +304,19 @@ code, pre, .font-mono {
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 12px 14px 20px;
+  padding: 12px 14px 64px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
+
+.rs-sidebar-inner > * {
+  flex-shrink: 0 !important;
+  min-height: min-content !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
 
 /* ─── Sidebar header (sticky) ────────────────────────────────── */
 .rs-sidebar-header {

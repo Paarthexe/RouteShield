@@ -1,6 +1,6 @@
 # Backend guide
 
-The backend is a FastAPI application in `backend/app`. It is the decision engine behind RouteShield: it turns a proposed evacuation journey into evidence about the roads, infrastructure, terrain, and hazards that shape whether that journey remains viable. It owns location resolution, route generation, sampling, enrichment, risk scoring, and the final route decision.
+The backend is a FastAPI application in `backend/app`. It is the decision engine behind RouteShield: it turns a proposed evacuation journey into evidence about the roads, infrastructure, terrain, and hazards that shape whether that journey remains viable. It owns location resolution, route generation, sampling, enrichment, risk scoring, network capacity, hazard propagation, and the final route decision.
 
 ## Run it
 
@@ -22,7 +22,7 @@ Settings are read from `.env` in the backend directory or repository root.
 |---|---|---|
 | `HOST` | `0.0.0.0` | Server bind address |
 | `PORT` | `8000` | Server port |
-| `MIREYE_API_KEY` | empty | Enables Mireye geocoding and hazard data |
+| `MIREYE_API_KEY` | empty | Enables Mireye geocoding and physical-world hazard data |
 | `MIREYE_BASE_URL` | `https://api.mireye.com/v1` | Mireye API base URL |
 | `MIREYE_MAX_PROBES` | `6` | Maximum targeted probes per route |
 | `MIREYE_MAX_CONCURRENCY` | `4` | Concurrent Mireye requests |
@@ -32,7 +32,7 @@ Settings are read from `.env` in the backend directory or repository root.
 | `ENABLE_CACHE` | `true` | Cache toggle |
 | `HTTP_TIMEOUT_S` | `10` | External request timeout |
 
-## API
+## API Endpoints
 
 ### `GET /api/health`
 
@@ -40,7 +40,7 @@ Returns service configuration and readiness details for the cache, NBI dataset, 
 
 ### `POST /api/location/resolve`
 
-Resolves a text location.
+Resolves a text location to geographic coordinates.
 
 ```json
 {
@@ -48,11 +48,11 @@ Resolves a text location.
 }
 ```
 
-Text resolution requires `MIREYE_API_KEY`. The service tries Mireye geocoding first and uses Nominatim when Mireye does not resolve the location.
+The service tries Mireye geocoding first and uses Nominatim when Mireye is not configured or does not resolve the location. Direct `lat, lon` strings bypass external geocoders.
 
 ### `POST /api/routes/generate`
 
-Generates and samples candidate routes from coordinates. It does not return the full decision analysis.
+Generates and samples candidate routes between coordinates without running full multi-layer enrichment or decision scoring.
 
 ```json
 {
@@ -73,17 +73,45 @@ Runs the complete analysis pipeline. Origins, destinations, and waypoints may be
   "destination": "Chico, CA",
   "waypoints": [],
   "sample_interval_m": 500,
-  "disaster_type": "WILDFIRE"
+  "disaster_type": "WILDFIRE",
+  "vehicle_profile": "STANDARD_VEHICLE",
+  "hazard_barriers": []
 }
 ```
 
 Supported disaster types are `ALL_HAZARDS`, `WILDFIRE`, `FLOOD_HURRICANE`, `EARTHQUAKE`, and `LANDSLIDE`.
+Supported vehicle fleet profiles are `STANDARD_VEHICLE`, `EMERGENCY_BUS`, `RESCUE_4X4`, and `HEAVY_SUPPLY`.
 
-The response contains resolved locations, candidate routes, route samples, bottlenecks, viability results, and `agent_decision`. The decision includes the selected primary and backup IDs, rejected route IDs, decision steps, evidence coverage, and backup-independence data.
+The response contains:
+- `origin` and `destination` (resolved location objects)
+- `routes` (geometry, elevation profiles, samples, bottlenecks, viability metrics, and time-to-cutoff)
+- `agent_decision` (primary, backup, and rejected routes, executive summary, trade-offs, and evidence coverage)
+- `evacuation_exposure` (census population count, vehicle fleet, and clearance time bounds)
+- `capacity_analysis` (aggregate network throughput, corridor flow limits, and shared trunk bottleneck conflicts)
+- `weather_conditions` (temperature, precipitation, wind speed, and wind vector alignment)
+- `historical_incidents` (NOAA alerts and OpenFEMA disaster declarations)
+- `shelters` (nearby emergency shelters, hospitals, fire stations, and staging points)
+- `scraped_live_updates` (real-time scraped emergency web bulletins, USGS seismic feeds, and incident dispatch orders)
+
+### `GET /api/routes/live-web-alerts`
+
+Returns real-time emergency web bulletins, USGS seismic alerts, and meteorological advisories scraped for the specified latitude, longitude, and active disaster protocol.
+
+### `GET /api/routes/{route_id}/live`
+
+Streams live Server-Sent Events (SSE) re-evaluating route conditions, traffic shifts, and hazard perimeters.
+
+### `POST /api/routes/{route_id}/segments/{segment_id}/repair`
+
+Re-routes a compromised or hazardous corridor sub-segment using `auto_repair`, `avoid_point`, or `mark_impassable`.
+
+### `POST /api/routes/zone-plan`
+
+Allocates multi-zone evacuations across distributed destinations to balance network capacity and minimize collective clearance times.
 
 ## Data services
 
-The backend contacts OSRM and Open-Meteo during analysis. Mireye is used for geocoding and deep dives at certain sample models. The NBI service looks for `2025AllStatesNoDelimiterAllRecords.txt` in the repository root and builds `backend/data/nbi_bridges.db` from it.
+The backend contacts OSRM for routing, Open-Meteo for elevation and weather, Mireye for physical-world hazard probes and AI reasoning, NOAA for weather alerts, OpenFEMA for historical disaster records, and public emergency feeds (NWS, USGS, OpenStreetMap Overpass) for real-time situational awareness. The NBI service builds and queries `backend/data/nbi_bridges.db` from the FHWA dataset.
 
 ## Tests
 
@@ -92,4 +120,4 @@ cd backend
 python3 -m pytest tests/ -v
 ```
 
-Tests cover API responses, location resolution, sampling rules, OSRM handling, disaster weighting, viability rejection, and backup independence.
+Tests cover API endpoints, location resolution, sampling rules, OSRM generation, disaster weighting, safety gates, contingency ranking, and backup independence.

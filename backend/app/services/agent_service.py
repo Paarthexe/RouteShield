@@ -348,7 +348,17 @@ def _generate_executive_summary(
             f"Bottlenecks: {v.bottleneck_count} total ({v.critical_bottleneck_count} critical)."
         )
     else:
-        parts.append("NO VIABLE CORRIDOR: every evaluated route violated at least one configured viability rule. Review the rejected-route evidence before acting.")
+        most_feasible = max(routes, key=lambda r: (r.viability.score if r.viability else 0)) if routes else None
+        if most_feasible and most_feasible.viability:
+            mf_v = most_feasible.viability
+            parts.append(
+                f"MOST FEASIBLE CONTINGENCY: {most_feasible.route_id.upper().replace('_', ' ')} "
+                f"({most_feasible.distance_km} km, {most_feasible.travel_time_min} min, Viability Score: {mf_v.score:.0f}/100). "
+                f"Active hazard exposure detected across candidate paths; proceed with maximum tactical caution."
+            )
+        else:
+            parts.append("EVALUATED CORRIDORS: High hazard exposure detected across candidate paths. Review corridor evidence before deployment.")
+
 
     if backup and backup.viability:
         v = backup.viability

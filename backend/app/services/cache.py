@@ -54,8 +54,9 @@ class CacheService:
             logger.warning(f"Cache get error for key '{key}': {e}")
         return None
 
-    def set(self, key: str, value: Any):
+    def set(self, key: str, value: Any, ttl_seconds: Optional[int] = None):
         if not self.enabled:
+
             return
         try:
             serialized = json.dumps(value)

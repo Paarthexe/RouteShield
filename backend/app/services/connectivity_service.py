@@ -21,10 +21,10 @@ class ConnectivityService:
 
         for i, s in enumerate(samples):
             dist_km = s.distance_from_origin_m / 1000.0
-            # Condition for dead zone: steep slope > 8% with elevation or specific terrain isolation
-            slope = s.slope_pct or 0.0
-            h = int(hashlib.md5(f"{s.sample_id}".encode()).hexdigest(), 16)
-            is_isolated = slope >= 9.0 or (h % 100 < 8 and dist_km > 5.0 and dist_km < (route.distance_km - 4.0))
+            # Physical terrain dead zone: canyon cuts and steep mountain passes (slope >= 8.5%)
+            slope = abs(s.slope_pct or 0.0)
+            is_isolated = slope >= 8.5
+
 
             if is_isolated and not in_zone:
                 in_zone = True

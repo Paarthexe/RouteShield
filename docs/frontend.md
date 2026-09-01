@@ -22,36 +22,39 @@ The Docker image serves the built application through nginx and forwards `/api` 
 
 ## User flow
 
-1. Enter an origin and destination as a place name, address, or `latitude, longitude` pair.
-2. Add optional waypoints.
-3. Choose a disaster mode and sample density.
-4. Run the analysis.
-5. Review the selected route, candidate corridors, map, elevation profile, sample evidence, and decision briefing.
+1. Enter an origin and destination as a place name, address, or `latitude, longitude` coordinate pair.
+2. Add optional intermediate stops or waypoints.
+3. Choose a disaster protocol (`All Hazards`, `Wildfire`, `Flood / Surge`, `Earthquake`, or `Landslide`) and vehicle fleet profile.
+4. Optionally place road barriers or roadblocks on the map to model closures.
+5. Run the analysis.
+6. Review the selected route, candidate corridors, map, elevation profile, sample evidence, population exposure, capacity analysis, and decision briefing.
+7. Switch between corridors, inspect bottlenecks, review multi-corridor capacity, or engage live monitoring.
 
-The map also supports point picking for the origin, destination, and waypoints. Before an analysis runs, the app resolves typed locations after a short pause to provide map context. Coordinate input is recognised in the browser without a location API call.
+The map supports direct point picking for origin, destination, waypoints, and custom hazard roadblocks. Typed locations are resolved through the backend geocoder with debouncing. Direct coordinate input is recognised immediately in the browser without external geocoding calls.
 
-## Main pieces
+## Component structure
 
-| File | Responsibility |
+| Component | Responsibility |
 |---|---|
-| `src/App.jsx` | Application state, analysis request, selected route, and layout |
-| `src/services/api.js` | Calls the analysis and location-resolution endpoints |
-| `src/components/LocationInput.jsx` | Location fields, waypoint controls, disaster mode, and sampling settings |
-| `src/components/MapView.jsx` | Leaflet map, route lines, markers, samples, and map picking |
-| `src/components/RouteCard.jsx` | Selected-corridor summary and viability display |
-| `src/components/RouteComparison.jsx` | Candidate-route comparison and selection |
-| `src/components/ElevationProfile.jsx` | Route elevation chart |
-| `src/components/SampleInspector.jsx` | Per-sample bridge, slope, and hazard evidence |
-| `src/components/AgentBriefing.jsx` | Primary, backup, and decision explanation |
-| `src/components/DecisionReadout.jsx` | Compact route decision readout |
-| `src/components/AnalysisTrace.jsx` | Analysis progress and returned decision steps |
+| `src/App.jsx` | Application state, analysis orchestration, selected route, and layout containers |
+| `src/services/api.js` | REST client and SSE live stream consumer |
+| `src/components/SearchPanel.jsx` | Origin/destination inputs, protocol selection, vehicle fleet profile, and layer controls |
+| `src/components/SidePanel.jsx` | Expandable sidebar housing route cards, metrics, profiles, and evidence drawers |
+| `src/components/MapView.jsx` | Interactive Leaflet map, route polyline rendering, bottleneck markers, isochrones, and point picking |
+| `src/components/RouteCard.jsx` | Corridor card with viability gauge, metrics, traffic, energy readiness, and contingency status badges |
+| `src/components/DecisionReadout.jsx` | Compact decision preview banner with active hazard warnings and role badges |
+| `src/components/PopulationPanel.jsx` | Census population exposure (ETE) and clearance time window estimation |
+| `src/components/CapacityPanel.jsx` | Multi-corridor network outflow throughput, shared trunk conflicts, and corridor flow limits |
+| `src/components/TTCCountdownPanel.jsx` | Time-to-Cutoff (TTC) hazard intercept countdown and sector distance alerts |
+| `src/components/ElevationProfile.jsx` | Route elevation graph, slope percentages, and terrain classification |
+| `src/components/SampleInspector.jsx` | Deep-dive modal inspecting bridge condition, slope, and Mireye physical-world facts |
+| `src/components/SegmentManager.jsx` | Sub-segment repair interface supporting automatic rerouting and manual avoidance |
+| `src/components/ScrapedAlertsPanel.jsx` | Real-time web-scraped emergency feeds, USGS seismic events, and live dispatch bulletins |
+| `src/components/LiveMonitorHUD.jsx` | Real-time SSE telemetry feed and corridor condition change notifications |
+| `src/components/AgentBriefing.jsx` | Full decision synthesis, trade-off narrative, and evidence coverage summary |
+| `src/components/ZonePlanner.jsx` | Multi-origin zone evacuation allocator balancing regional destination network capacity |
+| `src/components/ExportPanel.jsx` | Emergency route manifest and waypoint data export (JSON / CSV / GeoJSON) |
 
-## API contract used by the UI
+## Styling and Layout
 
-`analyzeRoutes` sends `POST /api/routes/analyze` with the origin, destination, non-empty waypoints, sample interval, and disaster type. `resolveLocation` sends `POST /api/location/resolve` with a text query.
-
-The UI expects the analysis response to include `routes` and optionally `agent_decision`. Each route includes geometry, timing, samples, bottlenecks, and viability data. The map treats the route geometry as GeoJSON longitude and latitude pairs.
-
-## Styling and map details
-
-The interface uses Tailwind utility classes and a dark operational-map theme. `index.css` holds the shared global styling. `MapView.jsx` assigns a fixed colour to each of the five possible route IDs, displays bottleneck markers, and keeps the map bounds aligned with the current analysis.
+The interface uses Tailwind CSS utility classes and an operational dark theme (`rs-dark`). Custom tokens and panel animations reside in `index.css`. Sidebar child containers maintain natural content height (`shrink-0 min-h-fit`) to prevent vertical clipping on compact viewports, while the left container supports horizontal drag-resizing between standard, wide, and ultra-wide modes.

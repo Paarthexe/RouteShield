@@ -2,14 +2,14 @@
 
 ## Overview
 
-RouteShield uses a **multi-stage agentic pipeline** to transform raw geospatial coordinates into a ranked, evidence-backed evacuation decision. Each stage calls one or more specialized *agent tools* — stateless functions with defined inputs, outputs, and failure modes. This document catalogs every tool, its responsibility, and how it fits into the pipeline.
+RouteShield uses a **multi-stage agentic pipeline** to transform raw geospatial coordinates and hazard signals into a ranked, evidence-backed evacuation decision. Each stage calls specialized *agent tools* with defined inputs, outputs, and deterministic fallbacks. This document catalogs every tool, its responsibility, and how it fits into the pipeline.
 
 ---
 
 ## Pipeline Stages
 
 ```
-User Query
+User Query (Origin, Destination, Mode, Fleet Profile)
     │
     ▼
 [1] OSRM Route Generator ──► Candidate Polylines (1–5 corridors)
@@ -18,120 +18,91 @@ User Query
 [2] Physical Sampler ──────► RouteSample[] (500 m intervals, lat/lon/elevation)
     │
     ▼
-[3a] NBI Bridge Fetcher ───► Bridge metadata per sample
-[3b] Mireye Hazard Fetcher ─► Real-time hazard score per sample
-[3c] Open-Meteo DEM ───────► Elevation + terrain penalty per sample
-    │  (run in parallel)
+[3a] NBI Bridge Fetcher ───► Bridge metadata & component condition ratings
+[3b] Mireye Hazard Fetcher ─► Provenance-tagged physical world hazard facts
+[3c] Open-Meteo DEM & Met ─► Elevation, route grade, and wind vector alignment
+    │  (executed in parallel)
     ▼
-[4] Bottleneck Detector ───► BottleneckInfo[] (BSI scoring, severity label)
+[4] Bottleneck Detector ───► BottleneckInfo[] (BSI scoring & severity classifications)
     │
     ▼
 [5] Segmentation Engine ───► RouteSegment[] (VIABLE / NEEDS_REPAIR / CRITICAL)
     │
     ▼
-[6] Viability Assessor ────► ViabilityAssessment (score 0-100, status, gates)
+[6] Viability Assessor ────► ViabilityAssessment (0-100 score, gates, contingency status)
     │
     ▼
 [7] Redundancy Assessor ───► BackupIndependenceAssessment (overlap %, shared bridges)
     │
     ▼
-[8] Decision Engine ───────► AgentDecision (PRIMARY / BACKUP / REJECTED ranking)
+[8] Isochrone & TTC Engine ─► Hazard propagation and time-to-cutoff clearance window
     │
     ▼
-[9] Live Monitor (SSE) ────► Continuous delta events after route is dispatched
+[9] Capacity & ETE Engine ─► Network throughput, shared trunk conflicts, and census exposure
+    │
+    ▼
+[10] Decision Engine ──────► AgentDecision (PRIMARY / BACKUP / REJECTED ranking)
+    │
+    ▼
+[11] Live Monitor (SSE) ───► Continuous real-time telemetry streaming
 ```
 
 ---
 
-## Tool Comparison Table
+## Safety Gate & Rejection Rules
 
-| # | Tool | Input | Output | Failure Mode | Latency (typical) |
-|---|------|-------|--------|--------------|-------------------|
-| 1 | **OSRM Route Generator** | Origin, Destination, optional Waypoints | GeoJSON LineString, distance_m, duration_s | Falls back to single route if alternatives unavailable | ~200 ms |
-| 2 | **Physical Sampler** | GeoJSON LineString, interval_m | `RouteSample[]` with lat/lon/distance | No samples if geometry is a single point | <5 ms |
-| 3a | **FHWA NBI Bridge Fetcher** | Lat/lon per sample, radius_m | `NBIBridge[]` with structure_id, year_built, material, condition rating | Returns `[]` on out-of-bounds; uses 600k+ SQLite snapshot | ~10–40 ms per sample |
-| 3b | **Mireye Hazard Fetcher** | Lat/lon per sample | `hazard_score` ∈ [0,1], threat categories | Returns 0.0 on API error or out-of-bounds (US-only) | ~80–150 ms per sample |
-| 3c | **Open-Meteo DEM + Weather** | Lat/lon per sample | `elevation_m`, terrain class, precipitation forecast | Graceful fallback to 0.0 on timeout | ~50–100 ms |
-| 4 | **Bottleneck Detector** | `RouteSample[]` with enriched scores | `BottleneckInfo[]` (BSI score, severity label, description) | Empty list if no samples exceed threshold | <5 ms |
-| 5 | **Segmentation Engine** | `Route` with samples and bottlenecks | `RouteSegment[]` — each ≈4 km, scored VIABLE/NEEDS_REPAIR/CRITICAL | Single segment if route is very short | <5 ms |
-| 6 | **Viability Assessor** | `Route`, `fastest_duration_s` reference | `ViabilityAssessment` — score, status, rejection_reasons | Always produces a result; rejection gates applied before scoring | <2 ms |
-| 7 | **Redundancy Assessor** | Primary route, candidate routes | `BackupIndependenceAssessment` — overlap_pct, shared_bridge_ids, is_independent | Returns 100% overlap if no candidates | <2 ms |
-| 8 | **Decision Engine** | All routes with viability + redundancy | `AgentDecision` — ranked list, trade-off narrative, evidence citations | Emits REJECTED-only result set if all routes fail gates | <5 ms |
-| 9 | **Live Monitor** | `route_id`, `current_sample_id`, `disaster_type` | SSE stream: `status_update`, `severity_changed`, `corridor_alert`, `heartbeat` | Stops streaming when route is deregistered or client disconnects | Continuous, 15s heartbeat |
-| 10 | **Segment Repair Engine** | `route_id`, `segment_id`, `action`, optional `avoid_coordinate` | `SegmentRepairResponse` — repaired route, `SegmentRepairDiff`, viability delta | Falls back to original geometry if OSRM returns no alternatives | ~300–800 ms |
+Corridors are evaluated against strict physical safety gates before receiving a PRIMARY or BACKUP recommendation:
+
+| Safety Gate | Trigger Condition | Rationale |
+|-------------|-------------------|-----------|
+| **Active Barrier / Roadblock** | Sample intersects roadblock exclusion zone | Physical road closure or obstacle makes corridor impassable |
+| **Catastrophic Bottleneck** | Any single bottleneck BSI ≥ 2.0 | Structural bridge failure or severe inundation prevents vehicular transit |
+| **Critical Bottleneck Density** | ≥ 35% of samples are Critical **and** ≥ 2 critical bottlenecks | Distributed criticality across the corridor fabric |
+| **Severe Hazard Exposure** | > 60% of samples have `hazard_score > 0.5` | Corridor traverses active wildfire or flood perimeters |
+| **Vehicle Operating Limits** | Slope > 12% for buses or > 10% for heavy tankers | Grade exceeds safe fleet operational limits |
+
+**Contingency Handling:** In severe emergency scenarios where every candidate corridor violates one or more safety gates, RouteShield ranks corridors by resilience score and designates the highest-scoring path as the **Primary Evacuation Corridor** (`is_contingency: True`). The decision and UI immediately display active hazard warnings and specific risk reasons so evacuees always have an actionable recommended route.
 
 ---
 
-## Rejection Gates (Viability Assessor)
+## Segment Repair Modes
 
-Gates are evaluated **in order** and are hard stops — a route failing any gate is immediately marked `REJECTED` and excluded from PRIMARY/BACKUP candidacy.
-
-| Gate | Threshold | Rationale |
-|------|-----------|-----------|
-| **Catastrophic BSI** | Any single bottleneck BSI ≥ 2.0 | A single structural failure point (bridge, underpass) that exceeds the catastrophic threshold makes the entire corridor impassable |
-| **Critical Bottleneck Density** | ≥ 35% of samples are Critical bottlenecks **and** ≥ 2 critical bottlenecks | Distributed criticality means repair is not local — the corridor fabric itself is compromised |
-| **Severe Hazard Exposure** | > 60% of samples have `hazard_score > 0.5` | Over half the route traverses actively hazardous terrain — unacceptable for evacuation |
-
----
-
-## Segment Repair Actions
-
-The Segment Repair Engine (`POST /api/routes/{route_id}/segments/{segment_id}/repair`) supports three action modes:
+The Segment Repair Engine (`POST /api/routes/{route_id}/segments/{segment_id}/repair`) supports three operational actions:
 
 | Action | Behavior |
 |--------|----------|
-| `auto_repair` | Engine selects best OSRM alternative sub-corridor automatically |
-| `avoid_point` | Avoids a user-specified coordinate (human-in-the-loop) via lateral waypoint injection |
-| `mark_impassable` | Flags segment as permanently blocked without re-routing |
+| `auto_repair` | Engine computes an optimal local bypass avoiding the compromised segment |
+| `avoid_point` | Bypasses a user-selected hazard coordinate via lateral anchor injection |
+| `mark_impassable` | Flags segment as permanently blocked and updates route viability |
 
 ---
 
-## SSE Event Schema (`GET /api/routes/{route_id}/live`)
+## SSE Event Stream Schema (`GET /api/routes/{route_id}/live`)
 
-```
+```json
 event: status_update
-data: {"route_id": "route_1", "type": "status_update", "severity": "ok", "message": "...", "timestamp": "..."}
+data: {"route_id": "route_1", "type": "status_update", "severity": "ok", "message": "Corridor status nominal", "timestamp": "2026-09-01T16:20:00Z"}
 
 event: severity_changed
-data: {"route_id": "route_1", "type": "severity_changed", "severity": "warning", "message": "Hazard elevated at sample route_1_4", ...}
+data: {"route_id": "route_1", "type": "severity_changed", "severity": "warning", "message": "Hazard score elevated at sample route_1_sample_004", "timestamp": "2026-09-01T16:20:15Z"}
 
 event: corridor_alert
-data: {"route_id": "route_1", "type": "corridor_alert", "severity": "critical", "message": "Critical bottleneck detected ahead", ...}
+data: {"route_id": "route_1", "type": "corridor_alert", "severity": "critical", "message": "Hazard perimeter interception window narrowed to 24 min", "timestamp": "2026-09-01T16:20:30Z"}
 
 event: heartbeat
-data: {"route_id": "route_1", "type": "heartbeat", "severity": "ok", "message": "Route status nominal", ...}
+data: {"route_id": "route_1", "type": "heartbeat", "severity": "ok", "message": "Telemetry stream active", "timestamp": "2026-09-01T16:20:45Z"}
 ```
 
 ---
 
 ## Data Source Provenance
 
-| Source | Coverage | Update Frequency | Notes |
-|--------|----------|-----------------|-------|
-| **FHWA National Bridge Inventory (NBI)** | United States only | Annual snapshot | 600,000+ bridge structures; SQLite local snapshot |
-| **Mireye Hazard API** | United States only | Near-real-time | Returns HTTP 400 for non-US coordinates; RouteShield falls back to score=0.0 |
-| **Open-Meteo DEM** | Global | On-demand | 90 m SRTM-derived elevation; weather forecast for precipitation |
-| **OSRM** | Global (OpenStreetMap) | Self-hosted | Drive-time routing; used for both main corridors and sub-segment repair |
-
----
-
-## Architecture Diagram
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                      Frontend (React)                    │
-│  LocationInput → App → MapView + RouteCard + LiveHUD     │
-│                         SegmentManager + AgentTools Modal│
-└────────────────────────┬────────────────────────────────┘
-                         │ HTTP / SSE
-┌────────────────────────▼────────────────────────────────┐
-│                  FastAPI Backend                          │
-│  POST /api/routes/analyze                                │
-│  GET  /api/routes/{id}/live          (SSE)               │
-│  POST /api/routes/{id}/segments/{sid}/repair             │
-└──┬──────────────┬───────────────┬────────────────────────┘
-   │              │               │
-   ▼              ▼               ▼
- OSRM          NBI SQLite     Mireye API
- (local)       (local)        + Open-Meteo
-```
+| Source | Coverage | Update Frequency | Purpose in RouteShield |
+|--------|----------|-----------------|------------------------|
+| **FHWA National Bridge Inventory (NBI)** | United States | Annual snapshot | 600,000+ bridge structures, deck/substructure condition ratings, scour criticality |
+| **Mireye Physical Hazard API** | United States | Near-real-time | Seismic PGA, CAL FIRE hazard zones, FEMA NFHL floodplains, USGS landslides, high-hazard dams |
+| **Open-Meteo DEM & Forecast** | Global | Real-time & forecast | High-resolution elevation, route grade percentages, temperature, precipitation, wind vectors |
+| **OSRM Engine** | Global | Live routing | Drive-time geometry discovery, alternative corridors, and sub-segment repair |
+| **NOAA Active Alerts & OpenFEMA** | United States | Real-time & historical | Active weather warnings and historical disaster declarations for After-Action Report matching |
+| **US Census Bureau ACS** | United States | 5-Year ACS | Evacuation population exposure counts and TRB NCHRP 752 clearance time estimation |
+| **Public Emergency Web Portals** | Multi-jurisdiction | Real-time web scraping | NWS active alerts, USGS real-time seismic feeds, and state emergency alerts |

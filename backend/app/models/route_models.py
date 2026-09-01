@@ -261,6 +261,8 @@ class HazardIsochrone(BaseModel):
     area_sq_km: float = 0.0
     hazard_front_speed_kmh: float = 0.0
     color: str = "#ef4444"
+    hazard_type: str = "WILDFIRE"
+    hazard_label: str = "Wildfire Flame Spread Front"
 
 
 class TimeCutoffAssessment(BaseModel):
@@ -271,8 +273,11 @@ class TimeCutoffAssessment(BaseModel):
     urgency_level: str = "CLEAR"  # "IMMINENT", "CRITICAL", "ELEVATED", "CLEAR"
     spread_rate_kmh: float = 0.0
     hazard_origin_description: str = ""
+    hazard_type: str = "WILDFIRE"
+    hazard_label: str = "Wildfire Flame Spread Front (Rothermel Model)"
     clearance_deadline_iso: Optional[str] = None
     isochrones: List[HazardIsochrone] = []
+
 
 
 
@@ -339,6 +344,20 @@ class SegmentRepairResponse(BaseModel):
     agent_decision: Optional[AgentDecision] = None
 
 
+class ScrapedEmergencyNotice(BaseModel):
+    notice_id: str
+    source_name: str
+    source_url: str
+    title: str
+    snippet: str
+    hazard_category: str
+    urgency: str
+    scraped_at: str
+    timestamp_epoch: float
+    affected_corridor: Optional[str] = None
+    distance_km: Optional[float] = None
+
+
 class RouteAnalyzeResponse(BaseModel):
     origin: Location
     destination: Location
@@ -360,6 +379,7 @@ class RouteAnalyzeResponse(BaseModel):
     aar_case_studies: List[AARCaseStudy] = []
     time_cutoff: Optional[TimeCutoffAssessment] = None
     hazard_isochrones: List[HazardIsochrone] = []
+    scraped_live_updates: List[ScrapedEmergencyNotice] = []
 
 
 class ZoneEvacuationRequest(BaseModel):
@@ -375,3 +395,4 @@ class ZoneEvacuationResponse(BaseModel):
     total_affected_population: int = 0
     total_clearance_time_min: float = 0.0
     disaster_type: str = "ALL_HAZARDS"
+

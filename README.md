@@ -4,28 +4,29 @@ RouteShield is built for the moment when a routing decision carries real consequ
 
 The project gives Mireye a practical evacuation intelligence experience: it turns physical-world evidence into a route decision that emergency planners, operators, and residents can inspect. RouteShield brings together route geometry, bridge condition, elevation, terrain, and hazard evidence to identify safer corridors, verify meaningful backups, and make the reasoning visible.
 
-It produces a primary route when one is viable, checks whether a separate backup corridor exists, and explains the decision with the evidence collected along each route. The result is designed to support judgement under pressure, where a few minutes saved can matter less than avoiding a route that is likely to fail.
+It produces a primary evacuation corridor when one is viable, provides a best-available contingency route with clear danger advisories when all corridors face active hazards, checks whether a separate backup corridor exists, and explains the decision with the evidence collected along each route. The result is designed to support judgement under pressure, where a few minutes saved can matter less than avoiding a route that is likely to fail.
 
 ## What it does
 
-- Generates up to five driving corridors between an origin and destination.
+- Generates up to five driving corridors between an origin and destination using OSRM.
 - Samples each corridor at a configurable physical interval, 500 metres by default.
 - Collects elevation for every sample and calculates route grade.
 - Looks up nearby bridges in the FHWA National Bridge Inventory when the local dataset is available.
 - Probes selected high-value samples for disaster data through Mireye when an API key is configured.
-- Models hazard spread isochrones and computes time-to-cutoff clearance windows for each corridor.
-- Evaluates multi-corridor capacity, shared bottlenecks, and contraflow lane reversals.
-- Estimates affected population exposure and evacuation clearance times using census data.
-- Collects real-time weather conditions and wind vector alignment along routes.
-- Cross-references live NOAA weather alerts and historical FEMA disaster declarations.
-- Locates emergency shelters, hospitals, fire stations, and refueling stops.
-- Identifies communication dead zones in steep canyons and mountain passes.
-- Scores bottlenecks from hazard risk, bridge vulnerability, and terrain.
-- Scores route viability, rejects corridors that cross configured safety limits, and checks backup-route independence.
+- Models hazard spread isochrones (Rothermel wildfire propagation & flood surge velocity) and computes time-to-cutoff clearance windows for each corridor.
+- Evaluates multi-corridor network capacity, corridor throughput, and shared trunk bottlenecks using Highway Capacity Manual (HCM 6th Edition) standards.
+- Estimates affected population exposure and evacuation clearance times using US Census demographic density and TRB NCHRP 752 ETE guidelines.
+- Collects real-time weather conditions and wind vector alignment along routes via Open-Meteo.
+- Ingests live NOAA/NWS active emergency alerts and OpenFEMA federal disaster declaration summaries.
+- Locates live OpenStreetMap emergency shelters, hospitals, fire stations, and refueling stops along corridors via Overpass.
+- Identifies communication and cellular dead zones in steep canyons and mountain passes.
+- Scores bottlenecks from hazard risk, bridge vulnerability, and terrain slope.
+- Scores route viability, rejects fragile corridors, checks backup-route independence, and designates the most feasible contingency corridor even under severe hazard conditions.
 - Allocates multi-zone evacuations across distributed destinations to balance network load.
-- Supports vehicle clearance profiles, custom road barriers, and sub-segment rerouting.
-- Streams live corridor re-evaluation updates through Server-Sent Events.
-- Shows the analysis on an interactive map with route cards, elevation profiles, bottleneck markers, sample details, and a decision briefing.
+- Supports vehicle clearance profiles, custom interactive roadblock barriers, and sub-segment rerouting.
+- Scrapes real-time emergency web feeds from NOAA/NWS, USGS seismic feeds, and state emergency alerts.
+- Streams live corridor re-evaluation updates through Server-Sent Events (SSE).
+- Shows the analysis on an interactive dark-mode map with route cards, elevation profiles, bottleneck markers, sample details, and a decision briefing.
 
 ## Why this matters
 
@@ -70,7 +71,7 @@ RouteShield calculates a bottleneck severity index at each sample:
 hazard risk × (1 + bridge vulnerability) × terrain penalty
 ```
 
-It marks scores of 0.40 or higher as moderate bottlenecks and scores of 0.70 or higher as critical bottlenecks. A route is rejected when a bottleneck exceeds the catastrophic threshold or when severe hazard exposure covers too much of the corridor. Full details are in [docs/architecture.md](docs/architecture.md).
+It marks scores of 0.40 or higher as moderate bottlenecks and scores of 0.70 or higher as critical bottlenecks. If every evaluated corridor crosses configured safety limits, RouteShield selects the highest-viability path as the primary contingency corridor, accompanied by an explicit danger warning so operators and residents are never left without an evacuation path. Full details are in [docs/architecture.md](docs/architecture.md).
 
 ## Project layout
 
@@ -78,13 +79,14 @@ It marks scores of 0.40 or higher as moderate bottlenecks and scores of 0.70 or 
 Routeshield/
 ├── backend/       FastAPI application, scoring services, and tests
 ├── frontend/      React and Leaflet application
-├── docs/          Architecture, backend, and frontend documentation
+├── docs/          Architecture, backend, frontend, and agent tools documentation
 └── docker-compose.yml
 ```
 
 - [Backend guide](docs/backend.md)
 - [Frontend guide](docs/frontend.md)
 - [Architecture](docs/architecture.md)
+- [Agent tools and pipeline](docs/AGENT_TOOLS.md)
 
 ## Run locally
 
@@ -132,7 +134,7 @@ docker compose up --build
 
 ## Data and service setup
 
-OSRM provides route geometry. Open-Meteo provides elevation and real-time weather. Mireye provides geocoding and physical-world hazard data. NOAA and OpenFEMA provide hazard alerts and disaster records. The US Census Bureau provides population data.
+OSRM provides route geometry. Open-Meteo provides elevation and real-time weather. Mireye provides geocoding and physical-world hazard data. NOAA and OpenFEMA provide hazard alerts and disaster records. The US Census Bureau provides population data. Overpass provides emergency shelter and refueling infrastructure.
 
 ## Tests
 

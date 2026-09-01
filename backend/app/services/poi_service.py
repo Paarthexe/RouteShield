@@ -1,17 +1,22 @@
 import logging
 import math
-import hashlib
 import httpx
 from typing import List, Dict, Any, Optional
 from app.config import settings
 from app.models.route_models import ShelterPOI, Route
+from app.services.cache import cache_service
 from app.utils.geo import haversine_distance
 
 logger = logging.getLogger(__name__)
 
+
 class POIService:
     def __init__(self):
-        self.overpass_url = "https://overpass-api.de/api/interpreter"
+        self.overpass_mirrors = [
+            "https://overpass-api.de/api/interpreter",
+            "https://overpass.kumi.systems/api/interpreter",
+            "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+        ]
         self.timeout = settings.HTTP_TIMEOUT_S
 
     async def find_corridor_shelters_and_pois(
@@ -19,69 +24,91 @@ class POIService:
         routes: List[Route],
         limit: int = 8
     ) -> List[ShelterPOI]:
-        """Find nearby emergency shelters, hospitals, and fire stations along the candidate routes."""
+        """Query live OSM Overpass nodes for emergency shelters, hospitals, and fire stations along candidate routes."""
         if not routes:
             return []
 
-        # Gather corridor bounding center
-        first_route = routes[0]
-        coords = first_route.geometry.coordinates if first_route.geometry else []
-        if not coords:
+        all_lons, all_lats = [], []
+        for r in routes:
+            if r.geometry and r.geometry.coordinates:
+                for lon, lat in r.geometry.coordinates:
+                    all_lons.append(lon)
+                    all_lats.append(lat)
+
+        if not all_lons or not all_lats:
             return []
 
-        mid_pt = coords[len(coords) // 2]
-        mid_lon, mid_lat = mid_pt[0], mid_pt[1]
+        pad = 0.04
+        min_lat = max(-90.0, min(all_lats) - pad)
+        max_lat = min(90.0, max(all_lats) + pad)
+        min_lon = max(-180.0, min(all_lons) - pad)
+        max_lon = min(180.0, max(all_lons) + pad)
 
-        # Use deterministic generator seeded by corridor geography
-        return self._generate_regional_pois(routes, mid_lat, mid_lon, limit)
+        cache_key = f"poi:shelters:live:{round(min_lat, 2)},{round(min_lon, 2)},{round(max_lat, 2)},{round(max_lon, 2)}"
+        cached = cache_service.get(cache_key)
+        if cached and isinstance(cached, list):
+            try:
+                return [ShelterPOI(**item) for item in cached]
+            except Exception:
+                pass
 
-    def _generate_regional_pois(self, routes: List[Route], lat: float, lon: float, limit: int) -> List[ShelterPOI]:
-        h = int(hashlib.md5(f"{round(lat, 2)},{round(lon, 2)}".encode()).hexdigest(), 16)
-        
+        query = f"""
+        [out:json][timeout:8];
+        (
+          node({min_lat},{min_lon},{max_lat},{max_lon})["amenity"="hospital"];
+          node({min_lat},{min_lon},{max_lat},{max_lon})["amenity"="fire_station"];
+          node({min_lat},{min_lon},{max_lat},{max_lon})["amenity"="shelter"];
+          node({min_lat},{min_lon},{max_lat},{max_lon})["emergency"="shelter"];
+          node({min_lat},{min_lon},{max_lat},{max_lon})["amenity"="social_facility"];
+        );
+        out center {limit * 2};
+        """
+
+        headers = {"User-Agent": "RouteShield-EmergencyPOI/2.0 (LiveOSMIngestion)"}
+        pois: List[ShelterPOI] = []
         primary_id = routes[0].route_id if routes else "route_1"
 
-        pois = [
-            ShelterPOI(
-                name="County Fairgrounds Emergency Assembly Shelter",
-                poi_type="shelter",
-                latitude=round(lat + 0.015, 5),
-                longitude=round(lon + 0.012, 5),
-                distance_to_route_m=420.0,
-                nearest_route_id=primary_id
-            ),
-            ShelterPOI(
-                name="Memorial Regional Medical Center (Trauma Level II)",
-                poi_type="hospital",
-                latitude=round(lat - 0.022, 5),
-                longitude=round(lon - 0.018, 5),
-                distance_to_route_m=680.0,
-                nearest_route_id=primary_id
-            ),
-            ShelterPOI(
-                name="Station 44 Fire & Rescue Operations Base",
-                poi_type="fire_station",
-                latitude=round(lat + 0.035, 5),
-                longitude=round(lon - 0.010, 5),
-                distance_to_route_m=290.0,
-                nearest_route_id=primary_id
-            ),
-            ShelterPOI(
-                name="Civic Center Emergency Staging Depot",
-                poi_type="assembly_point",
-                latitude=round(lat - 0.030, 5),
-                longitude=round(lon + 0.025, 5),
-                distance_to_route_m=850.0,
-                nearest_route_id=primary_id
-            ),
-            ShelterPOI(
-                name="Community High School Evacuation Center",
-                poi_type="shelter",
-                latitude=round(lat + 0.045, 5),
-                longitude=round(lon + 0.030, 5),
-                distance_to_route_m=510.0,
-                nearest_route_id=primary_id
-            )
-        ]
-        return pois[:limit]
+        for mirror in self.overpass_mirrors:
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout, headers=headers) as client:
+                    resp = await client.post(mirror, data={"data": query})
+                    if resp.status_code == 200:
+                        elements = resp.json().get("elements", [])
+                        for el in elements:
+                            tags = el.get("tags", {})
+                            name = tags.get("name")
+                            if not name:
+                                continue
+                            p_lat = el.get("lat") or el.get("center", {}).get("lat")
+                            p_lon = el.get("lon") or el.get("center", {}).get("lon")
+                            if p_lat is None or p_lon is None:
+                                continue
+
+                            amenity = tags.get("amenity") or tags.get("emergency") or "facility"
+                            poi_type = (
+                                "hospital" if amenity == "hospital" else
+                                "fire_station" if amenity == "fire_station" else
+                                "shelter" if "shelter" in amenity else
+                                "assembly_point"
+                            )
+
+                            pois.append(ShelterPOI(
+                                name=name,
+                                poi_type=poi_type,
+                                latitude=p_lat,
+                                longitude=p_lon,
+                                distance_to_route_m=0.0,
+                                nearest_route_id=primary_id
+                            ))
+                        if pois:
+                            break
+            except Exception as e:
+                logger.debug(f"Overpass POI query notice: {e}")
+
+        result = pois[:limit]
+        if result:
+            cache_service.set(cache_key, [p.model_dump() for p in result], ttl_seconds=600)
+        return result
+
 
 poi_service = POIService()

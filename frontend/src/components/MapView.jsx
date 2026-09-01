@@ -1031,8 +1031,29 @@ export default function MapView({
                 weight: 2,
                 dashArray: '4, 6'
               }}
-            />
+            >
+              <Tooltip sticky>
+                <div className="font-mono text-xs">
+                  <span className="font-bold text-purple-300">📡 Comms Dead Zone ({dz.length_km} km)</span>
+                  <div className="text-[10px] text-zinc-300">{dz.reason}</div>
+                </div>
+              </Tooltip>
+              <Popup>
+                <div className="p-1 space-y-1 font-mono text-xs">
+                  <span className="text-purple-400 font-bold block">
+                    📡 Communication Dead Zone ({dz.length_km} km)
+                  </span>
+                  <p className="text-zinc-300 text-[11px] font-sans">
+                    {dz.reason || 'Steep canyon terrain obstructs cellular and emergency VHF radio line-of-sight.'}
+                  </p>
+                  <div className="text-zinc-500 text-[10px]">
+                    Mile {(dz.start_km * 0.621371).toFixed(1)} – {(dz.end_km * 0.621371).toFixed(1)}
+                  </div>
+                </div>
+              </Popup>
+            </Circle>
           );
+
         })}
 
         {/* Render Real-World Documented AAR Case Study Chokepoints — only when Historical layer is active */}
@@ -1077,6 +1098,9 @@ export default function MapView({
           // GeoJSON is [lon, lat], Leaflet expects [lat, lon]
           const positions = (iso.polygon_coordinates || []).map(p => [p[1], p[0]]);
           if (positions.length < 3) return null;
+          const hazardTitle = iso.hazard_label || `T+${iso.time_min}m Hazard Spread Perimeter`;
+          const hazardIcon = iso.hazard_type === 'FLOOD_HURRICANE' ? '🌊' : iso.hazard_type === 'LANDSLIDE' ? '⛰️' : '🔥';
+
           return (
             <Polygon
               key={`isochrone_${idx}`}
@@ -1089,22 +1113,32 @@ export default function MapView({
                 dashArray: iso.time_min === 120 ? '4, 4' : undefined,
               }}
             >
+              <Tooltip sticky>
+                <div className="font-mono text-xs">
+                  <span className="font-bold text-amber-300">{hazardIcon} {hazardTitle}</span>
+                  <div className="text-[10px] text-zinc-300">Front Speed: {iso.hazard_front_speed_kmh} km/h</div>
+                </div>
+              </Tooltip>
               <Popup>
                 <div className="p-1 space-y-1 font-mono text-xs">
-                  <span className="text-rose-400 font-bold block">
-                    T+{iso.time_min} min Hazard Isochrone
+                  <span className="text-amber-400 font-bold block">
+                    {hazardIcon} {hazardTitle}
                   </span>
-                  <span className="text-zinc-300 text-[11px] block">
-                    Spread Velocity: {iso.hazard_front_speed_kmh} km/h
-                  </span>
-                  <span className="text-zinc-400 text-[10px] block">
+                  <div className="text-zinc-200 text-[11px]">
+                    <span className="text-zinc-400">Hazard Profile:</span> {iso.hazard_type || disasterType}
+                  </div>
+                  <div className="text-zinc-200 text-[11px]">
+                    <span className="text-zinc-400">Spread Velocity:</span> {iso.hazard_front_speed_kmh} km/h
+                  </div>
+                  <div className="text-zinc-400 text-[10px]">
                     Projected Enclosed Area: {iso.area_sq_km} sq km
-                  </span>
+                  </div>
                 </div>
               </Popup>
             </Polygon>
           );
         })}
+
 
         {/* Render Hazard Intercept Choke Marker */}
         {timeCutoff && timeCutoff.intercept_latitude && timeCutoff.intercept_longitude && (

@@ -41,12 +41,13 @@ export default function TTCCountdownPanel({ timeCutoff, disasterType = 'WILDFIRE
         <div className="flex items-center space-x-2">
           <Timer className="h-4 w-4 text-rose-400" />
           <h3 className="text-xs font-bold uppercase tracking-wider text-rose-200">
-            Time-to-Cutoff (TTC) Countdown
+            {timeCutoff.hazard_label || 'Time-to-Cutoff (TTC)'}
           </h3>
         </div>
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${urgencyColor} ${pulseRing}`}>
-          {timeCutoff.urgency_level} Hazard Cutoff
+          {timeCutoff.urgency_level}
         </span>
+
       </div>
 
       {/* Countdown Display */}

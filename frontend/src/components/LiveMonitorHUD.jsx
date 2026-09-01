@@ -129,8 +129,9 @@ export default function LiveMonitorHUD({ routeId, disasterType = 'ALL_HAZARDS', 
   const StatusIcon = sev.icon;
 
   return (
-    <div className={`rounded-xl border shadow-xl overflow-hidden transition-all ${sev.border} bg-zinc-950`}>
+    <div className={`rounded-xl border shadow-xl transition-all w-full shrink-0 min-h-fit box-border overflow-hidden ${sev.border} bg-zinc-950`}>
       {/* HUD Header */}
+
       <div className={`flex items-center justify-between px-4 py-2.5 ${sev.bg} border-b ${sev.border}`}>
         <div className="flex items-center gap-2.5">
           <div className="relative">

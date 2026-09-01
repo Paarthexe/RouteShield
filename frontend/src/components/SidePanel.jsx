@@ -22,6 +22,7 @@ import AnalysisTrace    from './AnalysisTrace';
 import ErrorNotice      from './ErrorNotice';
 import ZonePlanner      from './ZonePlanner';
 import WeatherBar       from './WeatherBar';
+import ScrapedAlertsPanel from './ScrapedAlertsPanel';
 
 export default function SidePanel({
   isOpen, onClose,
@@ -42,6 +43,9 @@ export default function SidePanel({
   onCycleWidth = null,
 }) {
   const routes        = analysisData?.routes || [];
+
+
+
   const selectedRouteObj = routes.find(r => r.route_id === selectedRouteId);
   const fastestDuration  = routes[0]?.travel_time_min;
   const activeIndex      = Math.max(0, routes.findIndex(r => r.route_id === selectedRouteId));
@@ -208,6 +212,62 @@ export default function SidePanel({
               />
             )}
 
+            {/* Real-Time Live Telemetry & Web Intelligence Control Bar */}
+            {analysisData && selectedRouteObj && (
+              <div className="flex items-center justify-between p-3 rounded-xl border border-zinc-800 bg-zinc-900/95 font-mono text-xs shadow-lg w-full shrink-0 min-h-fit box-border">
+                <div className="flex items-center gap-2.5">
+                  <div className="relative flex items-center justify-center">
+                    <Radio className={`h-4 w-4 ${showLiveMonitor ? 'text-emerald-400' : 'text-sky-400'}`} />
+                    <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${showLiveMonitor ? 'bg-emerald-400' : 'bg-sky-400'}`}></span>
+                      <span className={`relative inline-flex rounded-full h-2 w-2 ${showLiveMonitor ? 'bg-emerald-500' : 'bg-sky-500'}`}></span>
+                    </span>
+                  </div>
+                  <div>
+                    <div className="font-bold text-zinc-100 flex items-center gap-1.5">
+                      <span>Real-Time Stream & Web Alerts</span>
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded border font-bold ${
+                        showLiveMonitor
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                          : 'bg-sky-950 text-sky-300 border-sky-800'
+                      }`}>
+                        {showLiveMonitor ? 'LIVE STREAM ACTIVE' : 'READY'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-zinc-400 font-sans mt-0.5">
+                      {showLiveMonitor ? 'Streaming real-time SSE telemetry & delta alerts below' : 'Stream live SSE corridor telemetry & emergency web bulletins'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLiveMonitor(!showLiveMonitor)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer shrink-0 ml-2 shadow-sm ${
+                    showLiveMonitor
+                      ? 'bg-rose-950 text-rose-300 border-rose-800 hover:bg-rose-900'
+                      : 'bg-sky-950 text-sky-200 border-sky-700 hover:bg-sky-900'
+                  }`}
+                >
+                  {showLiveMonitor ? 'Stop Stream' : 'Open Live Monitor'}
+                </button>
+              </div>
+            )}
+
+            {/* Live Monitor HUD (Directly attached to Real-Time Bar) */}
+            {analysisData && showLiveMonitor && selectedRouteObj && (
+              <LiveMonitorHUD
+                routeId={selectedRouteObj.route_id}
+                disasterType={disasterType}
+                onClose={() => setShowLiveMonitor(false)}
+              />
+            )}
+
+            {/* Live Scraped Web Intelligence (Directly attached to Real-Time Bar) */}
+            {analysisData && (
+              <ScrapedAlertsPanel notices={analysisData.scraped_live_updates || []} />
+            )}
+
+
             {/* ── Corridor card deck ── */}
             {totalRoutes > 0 && (
               <div style={{
@@ -307,14 +367,6 @@ export default function SidePanel({
               />
             )}
 
-            {/* Live Monitor HUD */}
-            {analysisData && showLiveMonitor && selectedRouteObj && (
-              <LiveMonitorHUD
-                routeId={selectedRouteObj.route_id}
-                disasterType={disasterType}
-                onClose={() => setShowLiveMonitor(false)}
-              />
-            )}
 
             {/* Population Exposure */}
             {analysisData?.evacuation_exposure && (
@@ -325,6 +377,8 @@ export default function SidePanel({
             {analysisData?.capacity_analysis && (
               <CapacityPanel capacityAnalysis={analysisData.capacity_analysis} />
             )}
+
+
 
             {/* Historical Incident Timeline */}
             {analysisData?.historical_incidents?.length > 0 && (

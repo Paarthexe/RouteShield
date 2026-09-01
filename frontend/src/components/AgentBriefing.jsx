@@ -43,12 +43,13 @@ export default function AgentBriefing({ agentDecision }) {
           </div>
         )}
         {noViableRoute && (
-          <div className="flex items-center gap-1.5 bg-rose-950/70 border border-rose-800/80 px-2.5 py-0.5 rounded text-[11px] font-mono text-rose-300">
+          <div className="flex items-center gap-1.5 bg-amber-950/70 border border-amber-800/80 px-2.5 py-0.5 rounded text-[11px] font-mono text-amber-300">
             <AlertTriangle className="h-3 w-3" />
-            <span className="font-bold">NO VIABLE ROUTE</span>
+            <span className="font-bold">MOST FEASIBLE (HIGH RISK)</span>
           </div>
         )}
       </div>
+
 
       {backup_independence && (
         <div className={`rounded-lg border p-3 text-xs ${

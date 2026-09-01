@@ -127,9 +127,32 @@ class IsochroneService:
             if slopes:
                 avg_slope = sum(slopes) / len(slopes)
 
+        # Determine specific active hazard profile
+        if disaster_type == "WILDFIRE":
+            resolved_hazard = "WILDFIRE"
+            hazard_label = "Wildfire Flame Spread Front"
+        elif disaster_type == "FLOOD_HURRICANE":
+            resolved_hazard = "FLOOD_HURRICANE"
+            hazard_label = "Flood & Storm Surge Inundation Front"
+        elif disaster_type == "LANDSLIDE":
+            resolved_hazard = "LANDSLIDE"
+            hazard_label = "Steep Slope Debris Flow Front"
+        else:
+            # ALL_HAZARDS: select active physical hazard based on real-time environmental telemetry
+            precip = weather.precipitation_mm if weather and weather.precipitation_mm is not None else 0.0
+            if precip > 5.0:
+                resolved_hazard = "FLOOD_HURRICANE"
+                hazard_label = "Flash Flood Wave Inundation Front"
+            elif avg_slope > 12.0:
+                resolved_hazard = "LANDSLIDE"
+                hazard_label = "Canyon Debris Flow Hazard Front"
+            else:
+                resolved_hazard = "WILDFIRE"
+                hazard_label = "Wildfire Flame Spread Front (Rothermel Model)"
+
         # 1. Calculate physical rate of spread
         head_ros, flank_ros, back_ros = self._calculate_rothermel_spread_rate(
-            disaster_type, wind_speed, wind_dir, avg_slope
+            resolved_hazard, wind_speed, wind_dir, avg_slope
         )
 
         # 2. Identify hazard origin anchor
@@ -172,7 +195,9 @@ class IsochroneService:
                 polygon_coordinates=poly,
                 area_sq_km=area_sq_km,
                 hazard_front_speed_kmh=head_ros,
-                color=color
+                color=color,
+                hazard_type=resolved_hazard,
+                hazard_label=f"{hazard_label} (T+{time_min}m)"
             ))
 
         # 4. Compute Time-to-Cutoff (TTC) along the route polyline
@@ -241,10 +266,13 @@ class IsochroneService:
             intercept_longitude=intercept_lon or origin_lon,
             urgency_level=urgency,
             spread_rate_kmh=head_ros,
-            hazard_origin_description=f"Advancing {disaster_type.replace('_', ' ').title()} flank driven by {wind_speed:.0f} mph winds",
+            hazard_type=resolved_hazard,
+            hazard_label=hazard_label,
+            hazard_origin_description=f"Advancing {hazard_label} driven by {wind_speed:.0f} mph winds",
             clearance_deadline_iso=f"Clear before {deadline_time}",
             isochrones=isochrones
         )
+
 
         route.time_cutoff = assessment
         return assessment
