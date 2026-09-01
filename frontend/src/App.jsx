@@ -452,25 +452,6 @@ export default function App() {
           )}
         </div>
 
-        {/* ── ONLINE status dot (bottom-left, unobtrusive) ── */}
-        <div style={{
-          position: 'absolute', bottom: 12, left: showSidebar ? panelWidth + 24 : 16,
-          zIndex: 400, display: 'flex', alignItems: 'center', gap: 5,
-          padding: '4px 10px', borderRadius: 99,
-          background: 'var(--rs-bg-panel)', border: '1px solid var(--rs-border)',
-          boxShadow: 'var(--rs-shadow-sm)',
-          fontSize: 11, fontWeight: 600, color: 'var(--rs-accent-green)',
-          transition: isDragging ? 'none' : 'left 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-          fontFamily: 'monospace',
-        }}>
-          <span style={{
-            width: 7, height: 7, borderRadius: '50%',
-            background: 'var(--rs-accent-green)',
-            animation: 'pulse 2s cubic-bezier(.4,0,.6,1) infinite',
-          }} />
-          ONLINE
-        </div>
-
       </div>
     </ErrorBoundary>
   );

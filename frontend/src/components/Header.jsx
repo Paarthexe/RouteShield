@@ -43,10 +43,7 @@ export default function Header({ onOpenAgentTools }) {
           <span className="hidden sm:inline">Agent Tools</span>
         </button>
 
-        <div className="flex items-center space-x-1.5 bg-emerald-950/60 border border-emerald-800/50 px-2 py-1 rounded text-[11px] font-mono text-emerald-400">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span>ONLINE</span>
-        </div>
+
       </div>
     </header>
   );

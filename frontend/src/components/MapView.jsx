@@ -607,11 +607,62 @@ export default function MapView({
           const isSelected = route.route_id === selectedRouteId;
           const positions = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
           const strokeColor = getRouteColor(route.route_id, isDarkMode);
+          const trafficSamples = (route.samples || []).filter((sample) => sample.traffic_flow && sample.traffic_flow.current_speed_kmh);
+          const hasTraffic = isSelected && trafficSamples.length > 1 && positions.length > 1;
+          const trafficSegments = [];
+
+          if (hasTraffic) {
+            const sampleGeoIndices = (route.samples || []).map((sample) => {
+              let minDistance = Infinity;
+              let bestIdx = 0;
+              for (let pIdx = 0; pIdx < positions.length; pIdx += 1) {
+                const d = Math.hypot(positions[pIdx][0] - sample.latitude, positions[pIdx][1] - sample.longitude);
+                if (d < minDistance) {
+                  minDistance = d;
+                  bestIdx = pIdx;
+                }
+              }
+              return bestIdx;
+            });
+
+            for (let i = 0; i < (route.samples || []).length - 1; i += 1) {
+              const s1 = route.samples[i];
+              const tf = s1?.traffic_flow;
+              if (!tf) continue;
+
+              const idxStart = sampleGeoIndices[i];
+              const idxEnd = Math.max(idxStart + 1, sampleGeoIndices[i + 1]);
+              const segCoords = positions.slice(idxStart, idxEnd + 1);
+              if (segCoords.length < 2) continue;
+
+              let segColor = '#3b82f6';
+              let condStr = tf.congestion_condition || 'Free Flow';
+              if (tf.road_closed) {
+                segColor = '#111111';
+                condStr = 'Road Closed';
+              } else if (tf.congestion_condition === 'Heavy Congestion') {
+                segColor = '#ef4444';
+              } else if (tf.congestion_condition === 'Moderate Traffic') {
+                segColor = '#facc15';
+              } else if (tf.congestion_condition === 'Low Traffic') {
+                segColor = '#22c55e';
+              } else {
+                segColor = '#3b82f6';
+                condStr = 'Free Flow';
+              }
+
+              trafficSegments.push({
+                coords: segCoords,
+                color: segColor,
+                condition: condStr,
+                speed: tf.current_speed_kmh,
+              });
+            }
+          }
 
           return (
             <React.Fragment key={route.route_id}>
               {(() => {
-                const trafficSamples = (route.samples || []).filter((sample) => sample.traffic_flow && sample.traffic_flow.current_speed_kmh);
                 if (!trafficSamples.length) {
                   return (
                     <Polyline
@@ -634,22 +685,25 @@ export default function MapView({
                   trafficSamples.reduce((sum, sample) => sum + (sample.traffic_flow.current_speed_kmh || 0), 0) / trafficSamples.length
                 );
                 const hasClosure = trafficSamples.some((sample) => sample.traffic_flow?.road_closed);
-                const heavyCount = trafficSamples.filter((sample) => sample.traffic_flow?.congestion_condition === 'Heavy Congestion').length;
-                const moderateCount = trafficSamples.filter((sample) => sample.traffic_flow?.congestion_condition === 'Moderate Traffic').length;
-                const lowCount = trafficSamples.filter((sample) => sample.traffic_flow?.congestion_condition === 'Low Traffic').length;
-                const totalCount = trafficSamples.length;
-                const heavyShare = heavyCount / totalCount;
-                const moderateShare = moderateCount / totalCount;
-                const lowShare = lowCount / totalCount;
+                const counts = {
+                  'Heavy Congestion': trafficSamples.filter((sample) => sample.traffic_flow?.congestion_condition === 'Heavy Congestion').length,
+                  'Moderate Traffic': trafficSamples.filter((sample) => sample.traffic_flow?.congestion_condition === 'Moderate Traffic').length,
+                  'Low Traffic': trafficSamples.filter((sample) => sample.traffic_flow?.congestion_condition === 'Low Traffic').length,
+                  'Free Flow': trafficSamples.filter((sample) => {
+                    const cond = sample.traffic_flow?.congestion_condition;
+                    return !sample.traffic_flow?.road_closed && (!cond || cond === 'Free Flow');
+                  }).length,
+                };
+                const severityOrder = ['Road Closed', 'Heavy Congestion', 'Moderate Traffic', 'Low Traffic', 'Free Flow'];
                 const condition = hasClosure
                   ? 'Road Closed'
-                  : heavyShare >= 0.25
-                  ? 'Heavy Congestion'
-                  : heavyShare + moderateShare >= 0.35
-                  ? 'Moderate Traffic'
-                  : lowShare >= 0.3 || avgSpeed < 95
-                  ? 'Low Traffic'
-                  : 'Free Flow';
+                  : severityOrder.slice(1).reduce((best, label) => {
+                      if (counts[label] > counts[best]) return label;
+                      if (counts[label] === counts[best]) {
+                        return severityOrder.indexOf(label) < severityOrder.indexOf(best) ? label : best;
+                      }
+                      return best;
+                    }, 'Free Flow');
 
                 return (
                   <Polyline
@@ -706,6 +760,32 @@ export default function MapView({
                   lineJoin: 'round'
                 }}
               />
+
+              {hasTraffic && trafficSegments.length > 0 && trafficSegments.map((seg, segIdx) => (
+                <Polyline
+                  key={`traffic-seg-${route.route_id}-${segIdx}`}
+                  positions={seg.coords}
+                  eventHandlers={{
+                    click: () => onSelectRoute(route.route_id)
+                  }}
+                  pathOptions={{
+                    color: seg.color,
+                    weight: 6,
+                    opacity: 0.95,
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                  }}
+                >
+                  <Tooltip sticky direction="top" offset={[0, -4]} opacity={0.96} className="rs-route-traffic-tooltip">
+                    <div className="flex items-center gap-2 font-mono text-[10px] leading-none">
+                      <span className="font-bold text-slate-100">{Math.round(seg.speed)} km/h</span>
+                      <span className={seg.condition === 'Road Closed' ? 'text-rose-300' : seg.condition === 'Heavy Congestion' ? 'text-rose-300' : seg.condition === 'Moderate Traffic' ? 'text-yellow-300' : seg.condition === 'Low Traffic' ? 'text-emerald-300' : 'text-blue-300'}>
+                        {seg.condition}
+                      </span>
+                    </div>
+                  </Tooltip>
+                </Polyline>
+              ))}
             </React.Fragment>
           );
         })}
@@ -1053,56 +1133,6 @@ export default function MapView({
           </Marker>
         )}
 
-      </MapContainer>
-
-      {/* Floating Toolbar Buttons (Top-Right) */}
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
-        {hazardIsochrones && hazardIsochrones.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setShowIsochroneLayers(!showIsochroneLayers)}
-            className="rs-chip"
-            style={{
-              padding: '6px 12px',
-              fontSize: '12px',
-              fontWeight: 600,
-              background: showIsochroneLayers ? 'var(--rs-accent-orange-light)' : 'var(--rs-chip-bg)',
-              color: showIsochroneLayers ? 'var(--rs-accent-orange)' : 'var(--rs-text-secondary)',
-              borderColor: showIsochroneLayers ? 'rgba(227, 116, 0, 0.4)' : 'var(--rs-border)',
-              boxShadow: 'var(--rs-shadow-sm)',
-            }}
-          >
-            <Flame size={12} />
-            <span>{showIsochroneLayers ? 'Isochrones ON' : 'Isochrones OFF'}</span>
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => setPickerMode(pickerMode === 'hazard_barrier' ? null : 'hazard_barrier')}
-          className="rs-chip"
-          style={{
-            padding: '6px 12px',
-            fontSize: '12px',
-            fontWeight: 600,
-            background: pickerMode === 'hazard_barrier' ? 'var(--rs-accent-red-light)' : 'var(--rs-chip-bg)',
-            color: pickerMode === 'hazard_barrier' ? 'var(--rs-accent-red)' : 'var(--rs-text-secondary)',
-            borderColor: pickerMode === 'hazard_barrier' ? 'rgba(217, 48, 37, 0.5)' : 'var(--rs-border)',
-            boxShadow: 'var(--rs-shadow-sm)',
-          }}
-        >
-          <Ban size={12} />
-          <span>{pickerMode === 'hazard_barrier' ? 'Cancel Barrier Tool' : 'Draw Roadblock'}</span>
-          {hazardBarriers.length > 0 && (
-            <span style={{
-              marginLeft: 4, padding: '1px 5px', borderRadius: 99,
-              background: 'var(--rs-accent-red)', color: '#fff', fontSize: 10, fontWeight: 700,
-            }}>
-              {hazardBarriers.length}
-            </span>
-          )}
-        </button>
-      </div>
-
       {/* Hazard barrier picker active banner */}
       {pickerMode === 'hazard_barrier' && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-950/95 border border-rose-600 shadow-2xl text-[12px] font-bold font-mono text-rose-200">
@@ -1168,7 +1198,6 @@ export default function MapView({
               <div className="flex items-center space-x-2"><span className="flex h-3 w-3 items-center justify-center rounded-full bg-amber-500 text-[8px] text-slate-950">≈</span><span className="text-slate-300">NBI bridge evidence</span></div>
             )}
           </div>
-          {/* Hazard color key */}
           <div className="border-t border-slate-800 pt-1 space-y-1 text-[10px]" style={{ borderColor: isDarkMode ? undefined : '#e8eaed' }}>
             <div className="flex items-center space-x-2">
               <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
@@ -1191,6 +1220,62 @@ export default function MapView({
           </div>
         </div>
       )}
+      </MapContainer>
+
+      <div className="absolute top-4 right-4 z-[1000] flex items-center gap-2 pointer-events-auto">
+        {hazardIsochrones && hazardIsochrones.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowIsochroneLayers(!showIsochroneLayers)}
+            className="rs-chip"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 12px',
+              fontSize: '12px',
+              fontWeight: 700,
+              background: showIsochroneLayers ? '#3b0a00' : '#09090b',
+              color: showIsochroneLayers ? '#fdba74' : '#e5e7eb',
+              borderColor: showIsochroneLayers ? '#c2410c' : '#3f3f46',
+              borderWidth: '1px',
+              borderStyle: 'solid',
+              boxShadow: '0 8px 20px rgba(0,0,0,0.35)',
+            }}
+          >
+            <Flame size={12} />
+            <span>{showIsochroneLayers ? 'Hide Isochrones' : 'Show Isochrones'}</span>
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setPickerMode(pickerMode === 'hazard_barrier' ? null : 'hazard_barrier')}
+          className="rs-chip"
+          style={{
+            padding: '6px 12px',
+            fontSize: '12px',
+            fontWeight: 600,
+            background: pickerMode === 'hazard_barrier' ? 'var(--rs-accent-red-light)' : '#09090b',
+            color: pickerMode === 'hazard_barrier' ? 'var(--rs-accent-red)' : '#e5e7eb',
+            borderColor: pickerMode === 'hazard_barrier' ? 'rgba(217, 48, 37, 0.5)' : '#3f3f46',
+            borderWidth: '1px',
+            borderStyle: 'solid',
+            boxShadow: '0 8px 20px rgba(0,0,0,0.35)',
+          }}
+        >
+          <Ban size={12} />
+          <span>{pickerMode === 'hazard_barrier' ? 'Cancel Barrier Tool' : 'Draw Roadblock'}</span>
+          {hazardBarriers.length > 0 && (
+            <span style={{
+              marginLeft: 4, padding: '1px 5px', borderRadius: 99,
+              background: 'var(--rs-accent-red)', color: '#fff', fontSize: 10, fontWeight: 700,
+            }}>
+              {hazardBarriers.length}
+            </span>
+          )}
+        </button>
+      </div>
     </div>
   );
 }

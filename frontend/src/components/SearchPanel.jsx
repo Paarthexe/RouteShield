@@ -9,7 +9,7 @@ const DISASTER_MODES = [
   { id: 'ALL_HAZARDS', label: 'All Hazards' },
   { id: 'WILDFIRE',    label: 'Wildfire'   },
   { id: 'FLOOD_HURRICANE', label: 'Flood' },
-  { id: 'EARTHQUAKE', label: 'Quake'      },
+  { id: 'EARTHQUAKE', label: 'Earthquake'      },
   { id: 'LANDSLIDE',  label: 'Landslide'  },
 ];
 
